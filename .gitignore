@@ -1,7 +1,13 @@
 main
+*.so
 *.o
 *~
 \#*#
 ._*
 .Apple*
 .DS_Store
+*.py
+!setup.py
+*_wrap.c
+*.pyc
+*/trace_viewer

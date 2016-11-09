@@ -12,6 +12,10 @@ LIBS            = -lm
 
 all: $(SOURCES) $(EXECUTABLE)
 
+python: netrace.o netrace.i setup.py
+	swig -python netrace.i
+	python setup.py build_ext --inplace
+
 $(EXECUTABLE): $(OBJECTS)
 	$(CC) $(LDFLAGS) $(INCLUDES) $(LIBRARIES) $(OBJECTS) -o $(EXECUTABLE) $(LIBS)
 
