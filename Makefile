@@ -1,5 +1,5 @@
 CC			= gcc
-CFLAGS		= -Wall -O3 -c -g
+CFLAGS		= -Wall -O3 -c -g -flto
 ifdef ver
 	ifeq "$(ver)" "debug"
 		CFLAGS += -DDEBUG_ON
@@ -14,6 +14,9 @@ all: $(SOURCES) $(EXECUTABLE)
 
 $(EXECUTABLE): $(OBJECTS)
 	$(CC) $(LDFLAGS) $(INCLUDES) $(LIBRARIES) $(OBJECTS) -o $(EXECUTABLE) $(LIBS)
+
+netrace.o: $(SOURCES)
+	$(CC) $(CFLAGS) -U_FORTIFY_SOURCE $(INCLUDES) $(LIBRARIES) $< -o $@ $(LIBS)
 
 .o: $(SOURCES)
 	$(CC) $(CFLAGS) $(INCLUDES) $(LIBRARIES) $< -o $@ $(LIBS)
