@@ -6,8 +6,7 @@ main
 ._*
 .Apple*
 .DS_Store
-*.py
-!setup.py
+netrace.py
 *_wrap.c
 *.pyc
 */trace_viewer
