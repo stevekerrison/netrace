@@ -1,5 +1,5 @@
 CC			= gcc
-CFLAGS		= -Wall -O3 -c -g
+CFLAGS		= -Wall -O3 -c -g -flto
 LDFLAGS		=
 SOURCES		= ../netrace.c trace_viewer.c
 OBJECTS		= $(SOURCES:.c=.o)
