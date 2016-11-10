@@ -27,34 +27,52 @@ import struct
 from collections import namedtuple
 
 class netrace_packet:
+    PACKET_TYPES = ["InvalidCmd", "ReadReq", "ReadResp",
+        "ReadRespWithInvalidate", "WriteReq", "WriteResp",
+        "Writeback", "InvalidCmd", "InvalidCmd", "InvalidCmd",
+        "InvalidCmd", "InvalidCmd", "InvalidCmd", "UpgradeReq",
+        "UpgradeResp", "ReadExReq", "ReadExResp", "InvalidCmd",
+        "InvalidCmd", "InvalidCmd", "InvalidCmd", "InvalidCmd",
+        "InvalidCmd", "InvalidCmd", "InvalidCmd", "BadAddressError",
+        "InvalidCmd", "InvalidateReq", "InvalidateResp",
+        "DowngradeReq", "DowngradeResp"]
+
     def __init__(self, data):
         self.data = data
     def __str__(self):
-        return str(self.data)
+        return "  ID:{} CYC:{} SRC:{} DST:{} ADR:0x{:08x} TYP:{} NDEP:{} {}".format(
+            self.data.id, self.data.cycle, self.data.src,
+            self.data.dst, self.data.addr,
+            self.PACKET_TYPES[self.data.type], self.data.num_deps,
+            ' '.join(map(str, self.deps))
+        )
 
 class netrace:
 
     MAGIC = 0x484A5455
     NOTES_LIMIT = 8192
-    PACKET_FORMAT = "<QIIBBBBB"
+    Packet = namedtuple("Packet",
+            "cycle id addr type src dst node_types num_deps")
+    PACKET_FORMAT = "QIIBBBBB"
     PACKET_LENGTH = struct.calcsize(PACKET_FORMAT)
 
     def __init__(self, filename):
         self.fh = self.open_trace(filename)
         self.read_header(self.fh)
         self.read_regions(self.fh)
-        self.hdr['size'] = self.fh.tell()
+        self.header_size = self.fh.tell()
         self.header_str()
     
     def read_packet(self):
-        Packet = namedtuple("Packet",
-            "cycle id addr type src dst node_types num_deps")
+        
         data = self.fh.read(self.PACKET_LENGTH)
         if len(data) != self.PACKET_LENGTH:
             return None
-        pkt = netrace_packet(Packet._asdict(
-            Packet._make(struct.unpack(self.PACKET_FORMAT, data))
-        ))
+        pkt = self.Packet._make(struct.unpack(self.PACKET_FORMAT, data))
+        pkt = netrace_packet(pkt)
+        pkt.deps = []
+        for i in range(pkt.data.num_deps):
+            pkt.deps.append(struct.unpack("I", self.fh.read(4))[0])
         return pkt
         
     def header_str(self):
@@ -68,16 +86,16 @@ class netrace:
   Simulated Packets: {}
   Average injection rate: {:.6f}
   Notes: {}""".format(
-            self.hdr['benchmark_name'],
-            self.hdr['version'],
-            self.hdr['num_regions'],
-            self.hdr['num_nodes'],
-            self.hdr['num_cycles'],
-            self.hdr['num_packets'],
-            float(self.hdr['num_packets']) / self.hdr['num_cycles'],
-            self.hdr['notes']
+            self.hdr.benchmark_name,
+            self.hdr.version,
+            self.hdr.num_regions,
+            self.hdr.num_nodes,
+            self.hdr.num_cycles,
+            self.hdr.num_packets,
+            float(self.hdr.num_packets) / self.hdr.num_cycles,
+            self.notes
         )
-        for n, r in enumerate(self.hdr['regions']):
+        for n, r in enumerate(self.regions):
             self.header += """
         Region {}:
           Seek Offset: {}
@@ -85,26 +103,24 @@ class netrace:
           Simulated Packets: {}
           Average injection rate: {:.6f}
           Average injection rate per node: {:.6f}""".format(
-                n, r['seek_offset'], r['num_cycles'], r['num_packets'],
-                 float(r['num_packets']) / r['num_cycles'],
-                 float(r['num_packets']) / r['num_cycles'] / self.hdr['num_nodes']
+                n, r.seek_offset, r.num_cycles, r.num_packets,
+                 float(r.num_packets) / r.num_cycles,
+                 float(r.num_packets) / r.num_cycles / self.hdr.num_nodes
             )
         self.header += """
   Size of header (B): {}
-NT_TRACEFILE---------------------""".format(self.hdr['size'])
+NT_TRACEFILE---------------------""".format(self.header_size)
         
     def read_regions(self, fh):
-        self.hdr['regions'] = []
+        self.regions = []
         regionfmt = "=QQQ"
         Nt_RegionHdr = namedtuple("Nt_RegionHdr",
             "seek_offset num_cycles num_packets")
-        for i in range(self.hdr['num_regions']):
-            self.hdr['regions'].append(
-                Nt_RegionHdr._asdict(
-                    Nt_RegionHdr._make(
-                        struct.unpack(regionfmt, self.fh.read(
-                            struct.calcsize(regionfmt))
-                        )
+        for i in range(self.hdr.num_regions):
+            self.regions.append(
+                Nt_RegionHdr._make(
+                    struct.unpack(regionfmt, self.fh.read(
+                        struct.calcsize(regionfmt))
                     )
                 )
             )
@@ -115,20 +131,19 @@ NT_TRACEFILE---------------------""".format(self.hdr['size'])
             "magic version benchmark_name num_nodes num_cycles num_packets " +
             "notes_length num_regions"
         )
-        self.hdr = Nt_Header._asdict(
-            Nt_Header._make(
-                struct.unpack(hdrfmt,
-                    self.fh.read(struct.calcsize(hdrfmt)))))
-        if self.hdr['magic'] != self.MAGIC:
+        self.hdr = Nt_Header._make(
+            struct.unpack(hdrfmt,
+                self.fh.read(struct.calcsize(hdrfmt))))
+        if self.hdr.magic != self.MAGIC:
             raise ValueError("Bad magic number in trace file")
-        if self.hdr['notes_length'] in xrange(1, self.NOTES_LIMIT):
-            self.hdr['notes'] = struct.unpack(
-                '={}s'.format(self.hdr['notes_length']),
-                self.fh.read(self.hdr['notes_length']))[0]
-            self.hdr['notes'].rstrip('\0')
+        if self.hdr.notes_length in xrange(1, self.NOTES_LIMIT):
+            self.notes = struct.unpack(
+                '={}s'.format(self.hdr.notes_length),
+                self.fh.read(self.hdr.notes_length))[0]
+            self.notes = self.notes.rstrip('\0')
         else:
-            self.hdr['notes'] = None
-        self.hdr['benchmark_name'] = self.hdr['benchmark_name'].rstrip('\0')
+            self.notes = None
+        self.benchmark_name = self.hdr.benchmark_name.rstrip('\0')
 
     def open_trace(self, filename):
         types = {
@@ -148,13 +163,5 @@ if __name__ == "__main__":
     while pkt:
         print (pkt)
         pkt = nt.read_packet()
-    """ntr = netrace.nt_context(ARGS['<trace.tra.bz2>'])
-    netrace.nt_print_trheader(ntr);
-    pkt = ntr.read()
-    while pkt != None:
-        print ("  ID:{} CYC:{} SRC:{} DST:{} ADR:0x{:08x} TYP:{} NDEP:{} {}".format(
-            pkt.id, pkt.cycle, pkt.src, pkt.dst, pkt.addr, pkt.type_str,
-            pkt.num_deps, ' '.join(map(str,pkt.deps_list))))
-        pkt = ntr.read()
-    ntr.close()"""
+
 
