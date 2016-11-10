@@ -37,3 +37,22 @@ nt_context_t* open(char * filename) {
     }
 };
 
+%extend nt_packet {
+    PyObject* GetDeps() {
+        PyObject *l = PyList_New($self->num_deps);
+        for (int i = 0; i < $self->num_deps; i++) {
+            PyObject *o = PyInt_FromLong($self->deps[i]);
+            PyList_SetItem(l, i, o);
+        }
+        return l;
+    }
+    
+    const char* GetType( void ) {
+        return nt_packet_type_to_string( $self );
+    }
+
+    %pythoncode %{
+        __swig_getmethods__["type_str"] = GetType
+        __swig_getmethods__["deps_list"] = GetDeps
+    %}
+};
