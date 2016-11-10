@@ -57,7 +57,11 @@ void nt_open_trfile( nt_context_t* ctx, const char* trfilename ) {
 	int length = 20;
 	for( i = 0; trfilename[i] != 0; i++, length++ );
 	ctx->input_popencmd = (char*) nt_checked_malloc( length * sizeof(char) );
-	sprintf( ctx->input_popencmd, "bzip2 -dc %s", trfilename );
+	if (system("pbzip2 --version > /dev/null 2>&1") == 0) {
+		sprintf( ctx->input_popencmd, "pbzip2 -dc %s", trfilename );
+	} else {
+		sprintf( ctx->input_popencmd, "bzip2 -dc %s", trfilename );
+	}
 	ctx->input_tracefile = popen( ctx->input_popencmd, "r" );
 	if( ctx->input_tracefile == NULL ) {
 		nt_error( "failed to open pipe to trace file" );
