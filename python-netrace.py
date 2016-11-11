@@ -37,14 +37,22 @@ class netrace_packet:
         "InvalidCmd", "InvalidateReq", "InvalidateResp",
         "DowngradeReq", "DowngradeResp"]
 
+    NODE_TYPES =  ["L1 Data Cache", "L1 Instruction Cache",
+        "L2 Cache", "Memory Controller", "Invalid Node Type"]
+
     def __init__(self, data):
         self.data = data
+        self.unpack_types()
+
+    def unpack_types(self):
+        self.src_type = (self.data.node_types >> 4) & 0xf
+        self.dst_type = self.data.node_types & 0xf
+
     def __str__(self):
         return "  ID:{} CYC:{} SRC:{} DST:{} ADR:0x{:08x} TYP:{} NDEP:{} {}".format(
-            self.data.id, self.data.cycle, self.data.src,
-            self.data.dst, self.data.addr,
-            self.PACKET_TYPES[self.data.type], self.data.num_deps,
-            ' '.join(map(str, self.deps))
+            self.data.id, self.data.cycle, self.data.src, self.data.dst,
+            self.data.addr, self.PACKET_TYPES[self.data.type],
+            self.data.num_deps, ' '.join(map(str, self.deps))
         )
 
 class netrace:
