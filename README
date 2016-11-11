@@ -15,7 +15,7 @@ http://www.cs.utexas.edu/~netrace/
 
 Currently the trace viewer of the original has been mostly replicated.
 
-To run it, use `./python-netrace.py <tracefile>`. Uncompressed, gzip and bz2
+To run it, use `./netrace.py <tracefile>`. Uncompressed, gzip and bz2
 files are all supported and should be autodetected provided python's
 magic library is able to determine the right MIME type.
 

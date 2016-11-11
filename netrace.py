@@ -9,7 +9,7 @@
     if I'm any better at writing stuff in pure Python.
     
     Usage:
-        netrace-read.py [options] <trace>
+        netrace.py [options] <trace>
     
     Options:
         -h --help                   This help text.
