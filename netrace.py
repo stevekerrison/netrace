@@ -122,7 +122,7 @@ class netrace:
   Simulated Packets: {}
   Average injection rate: {:.6f}
   Notes: {}""".format(
-            self.hdr.benchmark_name,
+            self.benchmark_name,
             self.hdr.version,
             self.hdr.num_regions,
             self.hdr.num_nodes,
