@@ -132,16 +132,21 @@ class netrace:
             self.notes
         )
         for n, r in enumerate(self.regions):
+            if r.num_cycles:
+                air = "{:.6f}".format(float(r.num_packets) / r.num_cycles)
+                airn = "{:.6f}".format(
+                    float(r.num_packets) / r.num_cycles / self.hdr.num_nodes)
+            else:
+                air = "N/A"
+                airn = "N/A"
             self.header += """
         Region {}:
           Seek Offset: {}
           Simulated Cycles: {}
           Simulated Packets: {}
-          Average injection rate: {:.6f}
-          Average injection rate per node: {:.6f}""".format(
-                n, r.seek_offset, r.num_cycles, r.num_packets,
-                 float(r.num_packets) / r.num_cycles,
-                 float(r.num_packets) / r.num_cycles / self.hdr.num_nodes
+          Average injection rate: {}
+          Average injection rate per node: {}""".format(
+                n, r.seek_offset, r.num_cycles, r.num_packets, air, airn
             )
         self.header += """
   Size of header (B): {}
