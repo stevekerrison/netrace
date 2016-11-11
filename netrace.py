@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 """
     Netrace for Python
-    
+
     Reads a netrace compatible trace file into Python. Output format
     matches that of "trace_viewer <file> -p" from original netrace sample code.
-    
+
     This version is implemented in native python rather with Swig, to see
     if I'm any better at writing stuff in pure Python.
-    
+
     Usage:
         netrace.py [options] <trace>
-    
+
     Options:
         -h --help                   This help text.
-    
+
     Arguments:
         <trace>                     A netrace compatible trace file from (Ge)M5
                                     in bz2, gzip or uncompressed format.
@@ -22,7 +22,7 @@
     Copyright (c) 2010-2011 The University of Texas at Austin
     Copyright (c) 2016 Steve Kerrison, University of Bristol, UK
     All rights reserved.
-    
+
     Redistribution and use in source and binary forms, with or without
     modification, are permitted provided that the following conditions are
     met: redistributions of source code must retain the above copyright
@@ -54,19 +54,20 @@ import bz2
 import struct
 from collections import namedtuple
 
+
 class netrace_packet:
     PACKET_TYPES = ["InvalidCmd", "ReadReq", "ReadResp",
-        "ReadRespWithInvalidate", "WriteReq", "WriteResp",
-        "Writeback", "InvalidCmd", "InvalidCmd", "InvalidCmd",
-        "InvalidCmd", "InvalidCmd", "InvalidCmd", "UpgradeReq",
-        "UpgradeResp", "ReadExReq", "ReadExResp", "InvalidCmd",
-        "InvalidCmd", "InvalidCmd", "InvalidCmd", "InvalidCmd",
-        "InvalidCmd", "InvalidCmd", "InvalidCmd", "BadAddressError",
-        "InvalidCmd", "InvalidateReq", "InvalidateResp",
-        "DowngradeReq", "DowngradeResp"]
+                    "ReadRespWithInvalidate", "WriteReq", "WriteResp",
+                    "Writeback", "InvalidCmd", "InvalidCmd", "InvalidCmd",
+                    "InvalidCmd", "InvalidCmd", "InvalidCmd", "UpgradeReq",
+                    "UpgradeResp", "ReadExReq", "ReadExResp", "InvalidCmd",
+                    "InvalidCmd", "InvalidCmd", "InvalidCmd", "InvalidCmd",
+                    "InvalidCmd", "InvalidCmd", "InvalidCmd",
+                    "BadAddressError", "InvalidCmd", "InvalidateReq",
+                    "InvalidateResp", "DowngradeReq", "DowngradeResp"]
 
-    NODE_TYPES =  ["L1 Data Cache", "L1 Instruction Cache",
-        "L2 Cache", "Memory Controller", "Invalid Node Type"]
+    NODE_TYPES = ["L1 Data Cache", "L1 Instruction Cache",
+                  "L2 Cache", "Memory Controller", "Invalid Node Type"]
 
     def __init__(self, data):
         self.data = data
@@ -77,18 +78,19 @@ class netrace_packet:
         self.dst_type = self.data.node_types & 0xf
 
     def __str__(self):
-        return "  ID:{} CYC:{} SRC:{} DST:{} ADR:0x{:08x} TYP:{} NDEP:{} {}".format(
-            self.data.id, self.data.cycle, self.data.src, self.data.dst,
-            self.data.addr, self.PACKET_TYPES[self.data.type],
-            self.data.num_deps, ' '.join(map(str, self.deps))
-        )
+        return ("  ID:{} CYC:{} SRC:{} DST:{} " +
+                "ADR:0x{:08x} TYP:{} NDEP:{} {}").format(
+                self.data.id, self.data.cycle, self.data.src, self.data.dst,
+                self.data.addr, self.PACKET_TYPES[self.data.type],
+                self.data.num_deps, ' '.join(map(str, self.deps)))
+
 
 class netrace:
 
     MAGIC = 0x484A5455
     NOTES_LIMIT = 8192
     Packet = namedtuple("Packet",
-            "cycle id addr type src dst node_types num_deps")
+                        "cycle id addr type src dst node_types num_deps")
     PACKET_FORMAT = "QIIBBBBB"
     PACKET_LENGTH = struct.calcsize(PACKET_FORMAT)
 
@@ -98,9 +100,9 @@ class netrace:
         self.read_regions(self.fh)
         self.header_size = self.fh.tell()
         self.header_str()
-    
+
     def read_packet(self):
-        
+
         data = self.fh.read(self.PACKET_LENGTH)
         if len(data) != self.PACKET_LENGTH:
             return None
@@ -110,7 +112,7 @@ class netrace:
         for i in range(pkt.data.num_deps):
             pkt.deps.append(struct.unpack("I", self.fh.read(4))[0])
         return pkt
-        
+
     def header_str(self):
         self.header = """NT_TRACEFILE---------------------
   Benchmark: {}
@@ -151,12 +153,12 @@ class netrace:
         self.header += """
   Size of header (B): {}
 NT_TRACEFILE---------------------""".format(self.header_size)
-        
+
     def read_regions(self, fh):
         self.regions = []
         regionfmt = "=QQQ"
         Nt_RegionHdr = namedtuple("Nt_RegionHdr",
-            "seek_offset num_cycles num_packets")
+                                  "seek_offset num_cycles num_packets")
         for i in range(self.hdr.num_regions):
             self.regions.append(
                 Nt_RegionHdr._make(
@@ -169,12 +171,12 @@ NT_TRACEFILE---------------------""".format(self.header_size)
     def read_header(self, fh):
         hdrfmt = "=If30sBxQQII8x"
         Nt_Header = namedtuple("Nt_Header",
-            "magic version benchmark_name num_nodes num_cycles num_packets " +
-            "notes_length num_regions"
-        )
+                               "magic version benchmark_name num_nodes " +
+                               "num_cycles num_packets notes_length " +
+                               "num_regions")
         self.hdr = Nt_Header._make(
             struct.unpack(hdrfmt,
-                self.fh.read(struct.calcsize(hdrfmt))))
+                          self.fh.read(struct.calcsize(hdrfmt))))
         if self.hdr.magic != self.MAGIC:
             raise ValueError("Bad magic number in trace file")
         if self.hdr.notes_length in xrange(1, self.NOTES_LIMIT):
@@ -199,10 +201,8 @@ NT_TRACEFILE---------------------""".format(self.header_size)
 if __name__ == "__main__":
     ARGS = docopt(__doc__, version='1.0')
     nt = netrace(ARGS['<trace>'])
-    print (nt.header)
+    print(nt.header)
     pkt = nt.read_packet()
     while pkt:
-        print (pkt)
+        print(pkt)
         pkt = nt.read_packet()
-
-
