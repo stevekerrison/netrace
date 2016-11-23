@@ -17,8 +17,7 @@
     Arguments:
         <trace>                     A netrace compatible trace file from (Ge)M5
                                     in bz2, gzip or uncompressed format.
-"""
-"""
+
     Copyright (c) 2010-2011 The University of Texas at Austin
     Copyright (c) 2016 Steve Kerrison, University of Bristol, UK
     All rights reserved.
@@ -199,7 +198,7 @@ NT_TRACEFILE---------------------""".format(self.header_size)
 
 
 if __name__ == "__main__":
-    ARGS = docopt(__doc__, version='1.0')
+    ARGS = docopt('\n'.join(__doc__.split('\n')[:-24]), version='1.0')
     nt = netrace(ARGS['<trace>'])
     print(nt.header)
     pkt = nt.read_packet()
