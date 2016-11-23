@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
     Netrace for Python
 
@@ -48,7 +48,7 @@
 """
 
 from docopt import docopt
-import magic
+import magic  # python-magic, from pypy, not python-magic 5.x from distro repos
 import gzip
 import bz2
 import struct
@@ -124,14 +124,14 @@ class netrace:
   Simulated Packets: {}
   Average injection rate: {:.6f}
   Notes: {}""".format(
-            self.benchmark_name,
+            self.benchmark_name.decode('ascii'),
             self.hdr.version,
             self.hdr.num_regions,
             self.hdr.num_nodes,
             self.hdr.num_cycles,
             self.hdr.num_packets,
             float(self.hdr.num_packets) / self.hdr.num_cycles,
-            self.notes
+            self.notes.decode('ascii')
         )
         for n, r in enumerate(self.regions):
             if r.num_cycles:
@@ -179,14 +179,14 @@ NT_TRACEFILE---------------------""".format(self.header_size)
                           self.fh.read(struct.calcsize(hdrfmt))))
         if self.hdr.magic != self.MAGIC:
             raise ValueError("Bad magic number in trace file")
-        if self.hdr.notes_length in xrange(1, self.NOTES_LIMIT):
+        if self.hdr.notes_length in range(1, self.NOTES_LIMIT):
             self.notes = struct.unpack(
                 '={}s'.format(self.hdr.notes_length),
                 self.fh.read(self.hdr.notes_length))[0]
-            self.notes = self.notes.rstrip('\0')
+            self.notes = self.notes.rstrip(b'\0')
         else:
             self.notes = None
-        self.benchmark_name = self.hdr.benchmark_name.rstrip('\0')
+        self.benchmark_name = self.hdr.benchmark_name.rstrip(b'\0')
 
     def open_trace(self, filename):
         types = {
