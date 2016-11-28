@@ -70,6 +70,19 @@ class netsim_basenet:
     def __init__(self, argstr):
         argv = shlex.split(argstr)
         self.ARGS = docopt(self.__doc__, argv=argv)
+        self.l1d = {}
+        self.l1i = {}
+        self.l2 = {}
+        self.mc = {}
+
+    def build_revidx(self):
+        self.l1d_r = {v, k for k, v in self.l1d.items()}
+        self.l1i_r = {v, k for k, v in self.l1i.items()}
+        self.l2_r = {v, k for k, v in self.l2.items()}
+        self.mc_r = {v, k for k, v in self.mc.items()}
+
+    def map_nodes(self, l1, l2, mc):
+        raise NotImplementedError
 
     def attach(self, node_type, node_list):
         raise NotImplementedError
@@ -109,6 +122,18 @@ class netsim_benes(netsim_basenet):
         self.midbits = m
         self.midports = 2**m
 
+    def map_nodes(self, l1, l2, mc):
+        assert(len(l1) == len(l2) == self.nodes)
+        # No extravagant mapping in Benes as it's irrelevant.
+        for i in l1:
+            self.l1d[i] = i
+            self.l1i[i] = i
+        for i in l2:
+            self.l2[i] = i
+        for i in mc:
+            self.mc[i] = i
+        self.build_revidx()
+
 
 class netsim_mesh(netsim_basenet):
     """
@@ -128,6 +153,34 @@ class netsim_mesh(netsim_basenet):
             -b bits --buffering=bits    Amount of buffering per port
                                         [default: 128]
     """
+    def __init__(self, argstr):
+        super().__init__(argstr)
+        self.nodes = int(self.ARGS['--nodes'])
+        self.xy = int(math.sqrt(self.nodes))
+        assert(self.xy == math.sqrt(self.nodes))
+        self.buffering = int(self.ARGS['--buffering'])
+        self.directions = int(self.ARGS['--directions'])
+
+    def map_nodes(self, l1, l2, mc):
+        assert(len(l1) == len(l2) == self.nodes)
+        assert(len(mc) == self.xy)
+        x = 0
+        y = 0
+        for i in range(l1):
+            self.l1d[(x, y)] = i
+            self.l1i[(x, y)] = i
+            # Put the L2 caches adjacent to cores as len()s are equal
+            self.l2[(x + 1, y)] = i
+            x = x + 2 if x + 2 < self.xy * 2 else 0
+            y = y if x else y + 1
+            if x + 1 == self.xy * 2:
+                # Skip a row in the middle for mem controllers
+                x += 1
+        y = 0
+        for i in range(mc):
+            # MCs straight down the middle
+            self.mc[(self.xy, y)] = i
+        self.build_revidx()
 
 
 class netsim:
