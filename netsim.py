@@ -118,13 +118,15 @@ class netsim_basenet:
 
         Doesn't possess sufficient logic to simulate on its own
     """
+
     def __init__(self, argstr, num_nodes):
         argv = shlex.split(argstr)
         self.ARGS = docopt(self.__doc__, argv=argv)
         self.num_nodes = num_nodes
-        self.pos = {}
-        self.nid = {}
+        self.bypos = {}
+        self.bynid = {}
         self.nodes = set()
+        self.pending = set()
 
     def add_node(self, node):
         pos = node.pos
@@ -141,6 +143,14 @@ class netsim_basenet:
         raise NotImplementedError
 
     def attach(self, node_type, node_list):
+        raise NotImplementedError
+
+    def step(self):
+        """
+            Step the network simulation forward by one cycle
+
+            Must be implemented by subclass
+        """
         raise NotImplementedError
 
 
@@ -167,24 +177,20 @@ class netsim_zero(netsim_basenet):
         mc = mapping[tdec['mc']]
         assert(len(l1) == len(l2) == self.num_nodes)
         pos = 0
-        tid = netsim_node.TSTR_TNUM['l1d']
         for nodeid in l1:
-            nid = (tid, nodeid)
+            nid = ('l1d', nodeid)
             self.add_node(netsim_node(nid, pos))
             pos += 1
-        tid = netsim_node.TSTR_TNUM['l1i']
         for nodeid in l1:
-            nid = (tid, nodeid)
+            nid = ('l1i', nodeid)
             self.add_node(netsim_node(nid, pos))
             pos += 1
-        tid = netsim_node.TSTR_TNUM['l2']
         for nodeid in l2:
-            nid = (tid, nodeid)
+            nid = ('l2', nodeid)
             self.add_node(netsim_node(nid, pos))
             pos += 1
-        tid = netsim_node.TSTR_TNUM['mc']
         for nodeid in mc:
-            nid = (tid, nodeid)
+            nid = ('mc', nodeid)
             self.add_node(netsim_node(nid, pos))
             pos += 1
 
@@ -228,21 +234,18 @@ class netsim_benes(netsim_basenet):
         assert(len(l1) == len(l2) == self.num_nodes)
         # No extravagant mapping in Benes as it's irrelevant.
         pos = 0
-        tid = netsim_node.TSTR_TNUM['l1d']
         for nodeid in l1:
-            nid = (netsim_node.TSTR_TNUM['l1d'], nodeid)
+            nid = ('l1d', nodeid)
             self.add_node(netsim_node(nid, pos))
-            nid = (netsim_node.TSTR_TNUM['l1i'], nodeid)
+            nid = ('l1i', nodeid)
             self.add_node(netsim_node(nid, pos + 1))
             pos += 2
-        tid = netsim_node.TSTR_TNUM['l2']
         for nodeid in l2:
-            nid = (tid, nodeid)
+            nid = ('l2', nodeid)
             self.add_node(netsim_node(nid, pos))
             pos += 1
-        tid = netsim_node.TSTR_TNUM['mc']
         for nodeid in mc:
-            nid = (tid, nodeid)
+            nid = ('mc', nodeid)
             self.add_node(netsim_node(nid, pos))
             pos += 1
 
@@ -285,11 +288,11 @@ class netsim_mesh(netsim_basenet):
         y = 0
         for i in range(l1):
             # TODO: of l1i == l1i == l2?
-            nid = (netsim_node.TSTR_TNUM['l1d'], nodeid)
+            nid = ('l1d', nodeid)
             self.add_node(netsim_node(nid), (x, y))
-            nid = (netsim_node.TSTR_TNUM['l1i'], nodeid)
+            nid = ('l1i', nodeid)
             self.add_node(netsim_node(nid), (x + 1, y))
-            nid = (netsim_node.TSTR_TNUM['l2'], nodeid)
+            nid = ('l2', nodeid)
             self.add_node(netsim_node(nid), (x + 2, y))
             x = x + 3 if x + 3 < self.xy * 3 else 0
             y = y if x else y + 1
@@ -300,7 +303,7 @@ class netsim_mesh(netsim_basenet):
         x = 3 * (self.xy / 2)
         for i in range(mc):
             # MCs straight down the middle
-            nid = (netsim_node.TSTR_TNUM['mc'], nodeid)
+            nid = ('mc', nodeid)
             self.add_node(netsim_node(nid), (x, y))
             y += 1
 
