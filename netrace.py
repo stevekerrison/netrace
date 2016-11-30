@@ -100,6 +100,10 @@ class netrace:
         self.header_size = self.fh.tell()
         self.header_str()
 
+    def rewind(self):
+        """Go back to start of trace (first region, after header)"""
+        self.fh.seek(self.header_size)
+
     def read_packet(self):
 
         data = self.fh.read(self.PACKET_LENGTH)
