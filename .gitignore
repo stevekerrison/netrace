@@ -1,4 +1,5 @@
 main
+*.map
 *.so
 *.o
 *~
