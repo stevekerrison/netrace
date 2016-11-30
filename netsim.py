@@ -10,6 +10,10 @@
 
     Usage:
         netsim.py [options] <trace>
+        netsim.py map <trace>
+
+    In map mode <trace>.map is created, which can then be used to speed up
+    normal mode.
 
     Options:
         -h --help                       This help text.
@@ -17,6 +21,9 @@
                                         blank to see options. [default: help]
         -o opts --network-opts=opts     Configuration options for network.
                                         [default: --help]
+        -c mc --mem-controllers=mc      Number of memory controllers to
+                                        provide. Uses sqrt of number of nodes
+                                        by default [default: None].
 
     Arguments:
         <trace>                     A netrace compatible trace file from (Ge)M5
@@ -59,33 +66,127 @@ import inspect
 import shlex
 import importlib
 import math
+import pickle
 
-# TODO: Map different node types into the network (at the start?)
+
+class netsim_network:
+    """
+        A network of netsim_nodes.
+
+        Nodes can be looked up via their netrace (type,id) tuple, or by
+        their positional data from their particular subclass of netsim_basenet
+    """
+    def __setitem__(self, key, value):
+        if key in self or value in self:
+            raise KeyError("Cannot change mapping of existing entry")
+        super().__setitem__(self, key, value)
+        super().__setitem__(self, value, key)
+
+
+class netsim_node:
+    """
+        Node type for netsim / netrace
+    """
+
+    TNUM_TSTR = {0: 'l1d', 1: 'l1i', 2: 'l2', 3: 'mc'}
+    TSTR_TNUM = {v: k for k, v in TNUM_TSTR.items()}
+
+    def __init__(self, netrace_id, netsim_position):
+        if not isinstance(netrace_id, tuple) or len(netrace_id) != 2:
+            raise KeyError("netrace_id must be a tuple of (typestr, nodeid)")
+        if netrace_id[0] not in self.TSTR_TNUM:
+            raise KeyError("Node type {} for node ID {} unknown".format(
+                           netrace_id[0], netrace_id[1]))
+        if not isinstance(netrace_id[1], int):
+            raise KeyError("Node ID '{}' not an integer".format(netrace_id[1]))
+        # Use numerical type IDs after instantiation for efficiency
+        self.nid = (self.TSTR_TNUM[netrace_id[0]], netrace_id[1])
+        self.pos = netsim_position
+        self.sending = None
+        self.receiving = None
+
+    def send(self, node):
+        self.sending = node
+
+    def recv(self, node):
+        self.receiving = node
 
 
 class netsim_basenet:
     """
-        WAT
+        Base class for netsim networks
+
+        Doesn't possess sufficient logic to simulate on its own
     """
-    def __init__(self, argstr):
+    def __init__(self, argstr, num_nodes):
         argv = shlex.split(argstr)
         self.ARGS = docopt(self.__doc__, argv=argv)
-        self.l1d = {}
-        self.l1i = {}
-        self.l2 = {}
-        self.mc = {}
+        self.num_nodes = num_nodes
+        self.pos = {}
+        self.nid = {}
+        self.nodes = set()
 
-    def build_revidx(self):
-        self.l1d_r = {v, k for k, v in self.l1d.items()}
-        self.l1i_r = {v, k for k, v in self.l1i.items()}
-        self.l2_r = {v, k for k, v in self.l2.items()}
-        self.mc_r = {v, k for k, v in self.mc.items()}
+    def add_node(self, node):
+        pos = node.pos
+        nid = node.nid
+        if pos in self.bypos:
+            raise KeyError("Node position '{}' already in use".format(pos))
+        if nid in self.bynid:
+            raise KeyError("Node with ID '{}' already in system".format(nid))
+        self.nodes.add(node)
+        self.bypos[pos] = node
+        self.bynid[nid] = node
 
-    def map_nodes(self, l1, l2, mc):
+    def map_nodes(self, mapping):
         raise NotImplementedError
 
     def attach(self, node_type, node_list):
         raise NotImplementedError
+
+
+class netsim_zero(netsim_basenet):
+    """
+        An idealised zero-delay network with no contention
+
+        Explicitly provide an empty option string (-o" ") to netsim in order
+        to utilize this skeleton network.
+
+        Usage:
+            NETSIM_ARGS [options]
+
+        Options:
+            -h --help                   This help text
+    """
+    def __init__(self, argstr, num_nodes):
+        super().__init__(argstr, num_nodes)
+
+    def map_nodes(self, mapping):
+        tdec = netsim_node.TSTR_TNUM
+        l1 = mapping[tdec['l1i']]
+        l2 = mapping[tdec['l2']]
+        mc = mapping[tdec['mc']]
+        assert(len(l1) == len(l2) == self.num_nodes)
+        pos = 0
+        tid = netsim_node.TSTR_TNUM['l1d']
+        for nodeid in l1:
+            nid = (tid, nodeid)
+            self.add_node(netsim_node(nid, pos))
+            pos += 1
+        tid = netsim_node.TSTR_TNUM['l1i']
+        for nodeid in l1:
+            nid = (tid, nodeid)
+            self.add_node(netsim_node(nid, pos))
+            pos += 1
+        tid = netsim_node.TSTR_TNUM['l2']
+        for nodeid in l2:
+            nid = (tid, nodeid)
+            self.add_node(netsim_node(nid, pos))
+            pos += 1
+        tid = netsim_node.TSTR_TNUM['mc']
+        for nodeid in mc:
+            nid = (tid, nodeid)
+            self.add_node(netsim_node(nid, pos))
+            pos += 1
 
 
 class netsim_benes(netsim_basenet):
@@ -93,23 +194,20 @@ class netsim_benes(netsim_basenet):
         A Benes network based on the MCENoC approach
 
         Usage:
-            NETSIM_ARGS -n num [options]
+            NETSIM_ARGS [options]
 
         Options:
             -h --help                   This help text
-            -n num --nodes=num          Number of nodes in system
             -s bits --switchbits=bits   Number of bits per switch
                                         (2**bits ports) [default: 1]
     """
-    def __init__(self, argstr):
-        super().__init__(argstr)
-        nodes = int(self.ARGS['--nodes'])
-        channels = 2**math.ceil(math.log2(nodes))
-        if channels > nodes:
+    def __init__(self, argstr, num_nodes):
+        super().__init__(argstr, num_nodes)
+        channels = 2**math.ceil(math.log2(num_nodes))
+        if channels > num_nodes:
             print(
                 "W: {:d} ports are unused ({:.1f}% waste)".format(
-                    channels - nodes, (channels-nodes)/nodes * 100))
-        self.nodes = nodes
+                    channels - nodes, (channels-num_nodes)/num_nodes * 100))
         self.channels = channels
         self.bits = int(self.ARGS['--switchbits'])
         assert(2**self.bits < self.channels)
@@ -122,17 +220,31 @@ class netsim_benes(netsim_basenet):
         self.midbits = m
         self.midports = 2**m
 
-    def map_nodes(self, l1, l2, mc):
-        assert(len(l1) == len(l2) == self.nodes)
+    def map_nodes(self, mapping):
+        tdec = netsim_node.TSTR_TNUM
+        l1 = mapping[tdec['l1i']]
+        l2 = mapping[tdec['l2']]
+        mc = mapping[tdec['mc']]
+        assert(len(l1) == len(l2) == self.num_nodes)
         # No extravagant mapping in Benes as it's irrelevant.
-        for i in l1:
-            self.l1d[i] = i
-            self.l1i[i] = i
-        for i in l2:
-            self.l2[i] = i
-        for i in mc:
-            self.mc[i] = i
-        self.build_revidx()
+        pos = 0
+        tid = netsim_node.TSTR_TNUM['l1d']
+        for nodeid in l1:
+            nid = (netsim_node.TSTR_TNUM['l1d'], nodeid)
+            self.add_node(netsim_node(nid, pos))
+            nid = (netsim_node.TSTR_TNUM['l1i'], nodeid)
+            self.add_node(netsim_node(nid, pos + 1))
+            pos += 2
+        tid = netsim_node.TSTR_TNUM['l2']
+        for nodeid in l2:
+            nid = (tid, nodeid)
+            self.add_node(netsim_node(nid, pos))
+            pos += 1
+        tid = netsim_node.TSTR_TNUM['mc']
+        for nodeid in mc:
+            nid = (tid, nodeid)
+            self.add_node(netsim_node(nid, pos))
+            pos += 1
 
 
 class netsim_mesh(netsim_basenet):
@@ -143,56 +255,135 @@ class netsim_mesh(netsim_basenet):
         dispersed.
 
         Usage:
-            NETSIM_ARGS -n num [options]
+            NETSIM_ARGS [options]
 
         Options:
             -h --help                   This help text
-            -n num --nodes=num          Number of nodes in system
             -d dirs --directions=dirs   Number of directions per switch
                                         [default: 2]
             -b bits --buffering=bits    Amount of buffering per port
                                         [default: 128]
     """
-    def __init__(self, argstr):
-        super().__init__(argstr)
-        self.nodes = int(self.ARGS['--nodes'])
-        self.xy = int(math.sqrt(self.nodes))
-        assert(self.xy == math.sqrt(self.nodes))
+    def __init__(self, argstr, num_nodes):
+        super().__init__(argstr, num_nodes)
+        self.xy = int(math.sqrt(self.num_nodes))
+        assert(self.xy == math.sqrt(self.num_nodes))
         self.buffering = int(self.ARGS['--buffering'])
         self.directions = int(self.ARGS['--directions'])
 
-    def map_nodes(self, l1, l2, mc):
-        assert(len(l1) == len(l2) == self.nodes)
+    def map_nodes(self, mapping):
+        tdec = netsim_node.TSTR_TNUM
+        l1 = mapping[tdec['l1i']]
+        l2 = mapping[tdec['l2']]
+        mc = mapping[tdec['mc']]
+        assert(len(l1) == len(l2) == self.num_nodes)
         assert(len(mc) == self.xy)
+        if not (l1 == l2):
+            raise ValueError("Expected list of l1 and l2 IDs to be same")
+        # TODO: Better mapping, or more options?
         x = 0
         y = 0
         for i in range(l1):
-            self.l1d[(x, y)] = i
-            self.l1i[(x, y)] = i
-            # Put the L2 caches adjacent to cores as len()s are equal
-            self.l2[(x + 1, y)] = i
-            x = x + 2 if x + 2 < self.xy * 2 else 0
+            # TODO: of l1i == l1i == l2?
+            nid = (netsim_node.TSTR_TNUM['l1d'], nodeid)
+            self.add_node(netsim_node(nid), (x, y))
+            nid = (netsim_node.TSTR_TNUM['l1i'], nodeid)
+            self.add_node(netsim_node(nid), (x + 1, y))
+            nid = (netsim_node.TSTR_TNUM['l2'], nodeid)
+            self.add_node(netsim_node(nid), (x + 2, y))
+            x = x + 3 if x + 3 < self.xy * 3 else 0
             y = y if x else y + 1
-            if x + 1 == self.xy * 2:
+            if x + 1 == self.xy * 3:
                 # Skip a row in the middle for mem controllers
                 x += 1
         y = 0
+        x = 3 * (self.xy / 2)
         for i in range(mc):
             # MCs straight down the middle
-            self.mc[(self.xy, y)] = i
-        self.build_revidx()
+            nid = (netsim_node.TSTR_TNUM['mc'], nodeid)
+            self.add_node(netsim_node(nid), (x, y))
+            y += 1
 
 
 class netsim:
-    def __init__(self, nt, **kwargs):
-        self.ntrc = nt
-        print(kwargs)
+    def gather_nodes(self, cache=None, write=False, mc=None):
+        """
+            Read netrace until we've seen as many nodes and memory controllers
+            as we expect, or retrieve known node list from cache
+        """
+        if mc == "None":
+            mc = None
+        tdec = netsim_node.TSTR_TNUM
+        expect_l1 = self.ntrc.hdr.num_nodes
+        expect_l2 = self.ntrc.hdr.num_nodes
+        expect_mc = mc if mc else int(math.sqrt(self.ntrc.hdr.num_nodes))
+        if cache and not write:
+            with open(cache, 'rb') as f:
+                mapping = pickle.load(f)
+            # Some checks on the sanity of the mapping
+            if len(mapping[tdec['l1i']]) != expect_l1:
+                raise ValueError("Cache has {} cores, wanted {}".format(
+                    len(mapping[tdec['l1i']]), expect_l1))
+            if mapping[tdec['l1i']] != mapping[tdec['l1d']]:
+                raise ValueError("L1 I and D maps not equal")
+            if mapping[tdec['l1d']] != mapping[tdec['l2']]:
+                raise ValueError("Expected an L2 cache bank per L1")
+            if len(mapping[tdec['mc']]) != expect_mc:
+                raise ValueError("Mismatched number of MCs in cache/sys")
+            return mapping
+        mapping = {
+            tdec['l1i']: set(),
+            tdec['l1d']: set(),
+            tdec['l2']: set(),
+            tdec['mc']: set()
+        }
+        while not (
+                   len(mapping[tdec['l1i']]) == expect_l1 and
+                   len(mapping[tdec['l1d']]) == expect_l1 and
+                   len(mapping[tdec['l2']]) == expect_l2 and
+                   len(mapping[tdec['mc']]) == expect_mc):
+            pkt = self.ntrc.read_packet()
+            if not pkt:
+                raise EOFError("Got to end of file before gathering all nodes")
+            srcnode = (pkt.src_type, pkt.data.src)
+            for loc in ['src', 'dst']:
+                if getattr(pkt.data, loc) not in mapping[getattr(pkt, loc +
+                                                                 '_type')]:
+                    if getattr(pkt, loc + '_type') in [tdec['l1i'],
+                                                       tdec['l1d']]:
+                        mapping[tdec['l1i']].add(getattr(pkt.data, loc))
+                        mapping[tdec['l1d']].add(getattr(pkt.data, loc))
+                    else:
+                        mapping[getattr(pkt, loc + '_type')].add(
+                            getattr(pkt.data, loc))
+        if cache and write:
+            with open(cache, 'wb') as f:
+                pickle.dump(mapping, f, pickle.HIGHEST_PROTOCOL)
+        # Allow resumption of simulation after a scan for nodes
+        self.nt.rewind()
+        return mapping
+
+    def map(self):
+        tf = self.kwargs['<trace>'] + ".map"
+        result = self.gather_nodes(tf, True, self.kwargs['mem_controllers'])
+        print("Scanned and cached {} nodes, saved to '{}'".format(
+              len(result[netsim_node.TSTR_TNUM['l1i']]), tf))
+
+    def sim(self):
         classes = {x.__name__[7:]: x for x in netsim_basenet.__subclasses__()}
-        if (kwargs['network_type'] == 'help' or
-                kwargs['network_type'] not in classes.keys()):
+        if (self.kwargs['network_type'] == 'help' or
+                self.kwargs['network_type'] not in classes.keys()):
             print('Available networks: {}'.format(', '.join(classes.keys())))
             sys.exit(0)
-        netclass = classes[kwargs['network_type']](kwargs['network_opts'])
+        self.network = classes[self.kwargs['network_type']](
+            self.kwargs['network_opts'], self.ntrc.hdr.num_nodes)
+        tf = self.kwargs['<trace>'] + ".map"
+        mapping = self.gather_nodes(tf)
+        self.network.map_nodes(mapping)
+
+    def __init__(self, nt, **kwargs):
+        self.ntrc = nt
+        self.kwargs = kwargs
 
 
 if __name__ == "__main__":
@@ -200,3 +391,7 @@ if __name__ == "__main__":
     ns = netsim(netrace(ARGS['<trace>']),
                 **{k.strip('--').replace('-', '_'):
                 v for k, v in ARGS.items()})
+    if ARGS['map']:
+        ns.map()
+    else:
+        ns.sim()
