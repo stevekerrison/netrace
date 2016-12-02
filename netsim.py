@@ -60,6 +60,7 @@ from docopt import docopt
 from netrace import netrace, netrace_packet
 from os.path import isfile
 from distutils.util import strtobool
+from collections import deque
 import sys
 import json
 import inspect
@@ -88,7 +89,8 @@ class netsim_node:
         Node type for netsim / netrace
     """
 
-    TNUM_TSTR = {0: 'l1d', 1: 'l1i', 2: 'l2', 3: 'mc'}
+    # Type 4 (unknown / None) can be used for routers
+    TNUM_TSTR = {0: 'l1d', 1: 'l1i', 2: 'l2', 3: 'mc', 4: None}
     TSTR_TNUM = {v: k for k, v in TNUM_TSTR.items()}
 
     def __init__(self, netrace_id, netsim_position):
@@ -102,14 +104,43 @@ class netsim_node:
         # Use numerical type IDs after instantiation for efficiency
         self.nid = (self.TSTR_TNUM[netrace_id[0]], netrace_id[1])
         self.pos = netsim_position
-        self.sending = None
-        self.receiving = None
+        self.sendq = deque()
+        self.recvq = deque()
 
-    def send(self, node):
-        self.sending = node
+    def recv(self, pkt):
+        self.recvq.appendleft(pkt)
 
-    def recv(self, node):
-        self.receiving = node
+    def send(self, pkt):
+        self.sendq.appendleft(pkt)
+
+
+class netsim_data:
+    """
+        Track data from a packet as it moves between nodes
+    """
+    def __init__(self, pkt, src):
+        self.pkt = pkt
+        self.nodes = {src: pkt.PACKET_SIZE[pkt.data.type]}
+
+    def add(self, node):
+        if node in self.nodes:
+            raise KeyError("Node already registered for this packet")
+        self.nodes[node] = 0
+
+    def move(self, nodeA, nodeB, bytes):
+        """Move data between nodes. Either node can be None (endpoint)"""
+        if nodeA == NodeB is None:
+            raise ValueError("At least one node must be specified")
+        if nodeB:
+            self.nodes[nodeB] += bytes
+        if nodeA:
+            self.nodes[nodeA] -= bytes
+            if self.nodes[nodeA] < 0:
+                raise ValueError("Sent more data than we had")
+
+    def __len__(self):
+        """Return the number of bytes still in transit"""
+        return sum(self.nodes.values())
 
 
 class netsim_basenet:
@@ -125,8 +156,11 @@ class netsim_basenet:
         self.num_nodes = num_nodes
         self.bypos = {}
         self.bynid = {}
-        self.nodes = set()
-        self.pending = set()
+        self.nodes = []
+        self.pending = {}
+        self.packets = set()
+        self.data = {}
+        self.dependencies = {}
 
     def add_node(self, node):
         pos = node.pos
@@ -135,7 +169,8 @@ class netsim_basenet:
             raise KeyError("Node position '{}' already in use".format(pos))
         if nid in self.bynid:
             raise KeyError("Node with ID '{}' already in system".format(nid))
-        self.nodes.add(node)
+        self.nodes.append(node)
+        self.pending[node] = set()
         self.bypos[pos] = node
         self.bynid[nid] = node
 
@@ -144,6 +179,19 @@ class netsim_basenet:
 
     def attach(self, node_type, node_list):
         raise NotImplementedError
+
+    def inject(self, pkt):
+        raise NotImplementedError
+
+    def register(self, pkt):
+        """Register a packet's presence and forward dependencies"""
+        self.packets.add(pkt)
+        nid = (pkt.src_type, pkt.data.src)
+        self.data[pkt] = netsim_data(pkt, self.bynid[nid])
+        for dep in pkt.deps:
+            if dep not in self.dependencies:
+                self.dependencies[dep] = set()
+            self.dependencies[dep].add(pkt)
 
     def step(self):
         """
@@ -156,7 +204,10 @@ class netsim_basenet:
 
 class netsim_zero(netsim_basenet):
     """
-        An idealised zero-delay network with no contention
+        An idealised zero-delay network with no contention except at
+        {in|e}gress of nodes. A packet arrives in the receiver queue
+        in one cycle, regardless of size. A queue entry can be removed
+        every cycle.
 
         Explicitly provide an empty option string (-o" ") to netsim in order
         to utilize this skeleton network.
@@ -193,6 +244,23 @@ class netsim_zero(netsim_basenet):
             nid = ('mc', nodeid)
             self.add_node(netsim_node(nid, pos))
             pos += 1
+
+    def queue(self, pkt, node):
+        self.data[pkt].add(node)
+        self.pending[node].add(pkt)
+        node.recv(pkt)
+
+    def inject(self, pkt):
+        """Add packet to receiver queue"""
+        # Check if packet needs delaying
+        pkt.cycle_adj = 0
+        if pkt.data.id in self.dependencies:
+            pkt.cycle_adj = pkt.data.cycle + max(
+                [dep.cycle_adj for dep in self.dependencies[pkt.data.id]])
+        self.register(pkt)
+        nid = (pkt.dst_type, pkt.data.dst)
+        self.queue(pkt, self.bynid[nid])
+
 
 
 class netsim_benes(netsim_basenet):
@@ -372,6 +440,15 @@ class netsim:
         print("Scanned and cached {} nodes, saved to '{}'".format(
               len(result[netsim_node.TSTR_TNUM['l1i']]), tf))
 
+    def step(self, target_cycle):
+        while self.cycle != target_cycle:
+            self.network.step()
+            self.cycle += 1
+
+    def drain(self):
+        """Step network until no more pending packets"""
+        raise NotImplementedError
+
     def sim(self):
         classes = {x.__name__[7:]: x for x in netsim_basenet.__subclasses__()}
         if (self.kwargs['network_type'] == 'help' or
@@ -381,12 +458,24 @@ class netsim:
         self.network = classes[self.kwargs['network_type']](
             self.kwargs['network_opts'], self.ntrc.hdr.num_nodes)
         tf = self.kwargs['<trace>'] + ".map"
+        print("Loading map", file=sys.stderr)
         mapping = self.gather_nodes(tf)
+        print("Mapping nodes", file=sys.stderr)
         self.network.map_nodes(mapping)
+        print("Start simulation", file=sys.stderr)
+        while True:
+            pkt = self.ntrc.read_packet()
+            if not pkt:
+                self.drain()
+                break
+            print(pkt)
+            self.network.inject(pkt)
+            self.step(pkt.data.cycle)
 
     def __init__(self, nt, **kwargs):
         self.ntrc = nt
         self.kwargs = kwargs
+        self.cycle = 0
 
 
 if __name__ == "__main__":
