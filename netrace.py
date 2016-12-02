@@ -13,6 +13,7 @@
 
     Options:
         -h --help                   This help text.
+        -t --print-node-types       Decode node types to strings
 
     Arguments:
         <trace>                     A netrace compatible trace file from (Ge)M5
@@ -74,6 +75,15 @@ class netrace_packet:
     def unpack_types(self):
         self.src_type = (self.data.node_types >> 4) & 0xf
         self.dst_type = self.data.node_types & 0xf
+
+    def type_str(self):
+        """Similar to __str__ but with node types decoded"""
+        return ("  ID:{} CYC:{} SRC:{}-{} DST:{}-{} " +
+                "ADR:0x{:08x} TYP:{} NDEP:{} {}").format(
+                self.data.id, self.data.cycle, self.NODE_TYPES[self.src_type],
+                self.data.src, self.NODE_TYPES[self.dst_type], self.data.dst,
+                self.data.addr, self.PACKET_TYPES[self.data.type],
+                self.data.num_deps, ' '.join(map(str, self.deps)))
 
     def __str__(self):
         return ("  ID:{} CYC:{} SRC:{} DST:{} " +
@@ -206,5 +216,8 @@ if __name__ == "__main__":
     print(nt.header)
     pkt = nt.read_packet()
     while pkt:
-        print(pkt)
+        if ARGS['--print-node-types']:
+            print(pkt.type_str())
+        else:
+            print(pkt)
         pkt = nt.read_packet()
