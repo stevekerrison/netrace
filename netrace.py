@@ -65,6 +65,7 @@ class netrace_packet:
                     "InvalidCmd", "InvalidCmd", "InvalidCmd",
                     "BadAddressError", "InvalidCmd", "InvalidateReq",
                     "InvalidateResp", "DowngradeReq", "DowngradeResp"]
+    PACKET_SIZE = [-1, 8, 72, 72, 72, 8, 72, 8, 8, 8, 72, 8, 8, 8, 8, 72]
 
     NODE_TYPES = ["L1D", "L1I", "L2", "M", "Invalid"]
 
