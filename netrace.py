@@ -65,8 +65,7 @@ class netrace_packet:
                     "BadAddressError", "InvalidCmd", "InvalidateReq",
                     "InvalidateResp", "DowngradeReq", "DowngradeResp"]
 
-    NODE_TYPES = ["L1 Data Cache", "L1 Instruction Cache",
-                  "L2 Cache", "Memory Controller", "Invalid Node Type"]
+    NODE_TYPES = ["L1D", "L1I", "L2", "M", "Invalid"]
 
     def __init__(self, data):
         self.data = data
