@@ -186,6 +186,7 @@ class netsim_basenet:
         self.num_nodes = num_nodes
         self.bypos = {}
         self.bynid = {}
+        self.active_nodes = set()
         self.nodes = []
         self.packets = set()
         self.routes = {}
@@ -284,6 +285,8 @@ class netsim_zero(netsim_basenet):
             pos += 1
 
     def route(self, pkt, node):
+        if not len(node.active) and not len(node.q['recv']):
+            self.active_nodes.add(node)
         node.q['recv'].appendleft(pkt)
         if (
                 netsim_node.dst_from_packet(pkt) !=
@@ -311,6 +314,8 @@ class netsim_zero(netsim_basenet):
                     "Packet {} was expected to be active on node {}".format(
                         pkt.data.id, node))
             node.active.remove(pkt)
+            if not len(node.active) and not len(node.q['recv']):
+                self.active_nodes.remove(node)
             # TODO: Choose queue? Probably a job for netsim_route.propagate()
             if not len(self.routes[pkt]):
                 if pkt.cycle_adj > self.total_cycle_adj:
@@ -338,9 +343,8 @@ class netsim_zero(netsim_basenet):
         """
         for pkt in self.routes:
             pkt.cycle_adj += 1
-        nodes = [n for n in self.nodes if len(n.q['recv']) or len(n.active)]
         closures = []
-        for n in nodes:
+        for n in self.active_nodes:
             if len(n.active) > 1:
                 raise RuntimeError(
                     "Node {} handling simultaneous receives".format(n))
