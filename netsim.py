@@ -476,7 +476,7 @@ class netsim:
         expect_l1 = self.ntrc.hdr.num_nodes
         expect_l2 = self.ntrc.hdr.num_nodes
         expect_mc = mc if mc else int(math.sqrt(self.ntrc.hdr.num_nodes))
-        if cache and not write:
+        if cache and not write and isfile(cache):
             with open(cache, 'rb') as f:
                 mapping = pickle.load(f)
             # Some checks on the sanity of the mapping
