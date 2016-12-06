@@ -537,6 +537,8 @@ class netsim:
 
     def drain(self):
         """Step network until no more pending packets"""
+        while len(self.network.packets):
+            self.step(self.cycle + 1)
         raise NotImplementedError
 
     def progress(self):
