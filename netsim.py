@@ -519,7 +519,7 @@ class netsim:
             with open(cache, 'wb') as f:
                 pickle.dump(mapping, f, pickle.HIGHEST_PROTOCOL)
         # Allow resumption of simulation after a scan for nodes
-        self.nt.rewind()
+        self.ntrc.rewind()
         return mapping
 
     def map(self):
