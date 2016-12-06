@@ -24,6 +24,7 @@
         -c mc --mem-controllers=mc      Number of memory controllers to
                                         provide. Uses sqrt of number of nodes
                                         by default [default: None].
+        -p, --progress                  Print progress to stderr
 
     Arguments:
         <trace>                     A netrace compatible trace file from (Ge)M5
@@ -68,6 +69,7 @@ import shlex
 import importlib
 import math
 import pickle
+import time
 
 
 class netsim_network:
@@ -537,6 +539,13 @@ class netsim:
         """Step network until no more pending packets"""
         raise NotImplementedError
 
+    def progress(self):
+        print("\r{:03.02f}% - {}/{}".format(
+            float(self.packets) / self.ntrc.hdr.num_packets * 100,
+              self.packets, self.ntrc.hdr.num_packets),
+              file=sys.stderr,
+              end="")
+
     def sim(self):
         classes = {x.__name__[7:]: x for x in netsim_basenet.__subclasses__()}
         if (self.kwargs['network_type'] == 'help' or
@@ -551,12 +560,21 @@ class netsim:
         print("Mapping nodes", file=sys.stderr)
         self.network.map_nodes(mapping)
         print("Start simulation", file=sys.stderr)
+        then = time.time() * 1000
         while True:
+            if self.kwargs['progress']:
+                now = time.time() * 1000
+                if now - then > 100:
+                    self.progress()
+                    then = now
             pkt = self.ntrc.read_packet()
             if not pkt:
+                if self.kwargs['progress']:
+                    self.progress()
+                    print(file=sys.stderr)
                 self.drain()
                 break
-            print(pkt)
+            self.packets += 1
             self.step(pkt.data.cycle)
             self.network.inject(pkt)
 
@@ -564,6 +582,7 @@ class netsim:
         self.ntrc = nt
         self.kwargs = kwargs
         self.cycle = 0
+        self.packets = 0
 
 
 if __name__ == "__main__":
