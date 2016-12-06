@@ -313,6 +313,8 @@ class netsim_zero(netsim_basenet):
             node.active.remove(pkt)
             # TODO: Choose queue? Probably a job for netsim_route.propagate()
             if not len(self.routes[pkt]):
+                if pkt.cycle_adj > self.total_cycle_adj:
+                    self.total_cycle_adj = pkt.cycle_adj
                 # Packet has sent all data, so clean up
                 if pkt.data.id in self.dependencies:
                     # Reduce dependency list
@@ -539,7 +541,7 @@ class netsim:
         """Step network until no more pending packets"""
         while len(self.network.packets):
             self.step(self.cycle + 1)
-        raise NotImplementedError
+        return self.network.total_cycle_adj
 
     def progress(self):
         print("\r{:03.02f}% - {}/{}".format(
@@ -563,6 +565,7 @@ class netsim:
         self.network.map_nodes(mapping)
         print("Start simulation", file=sys.stderr)
         then = time.time() * 1000
+        last_pkt = None
         while True:
             if self.kwargs['progress']:
                 now = time.time() * 1000
@@ -574,11 +577,12 @@ class netsim:
                 if self.kwargs['progress']:
                     self.progress()
                     print(file=sys.stderr)
-                self.drain()
+                print(self.drain(), last_pkt.data.cycle)
                 break
             self.packets += 1
             self.step(pkt.data.cycle)
             self.network.inject(pkt)
+            last_pkt = pkt
 
     def __init__(self, nt, **kwargs):
         self.ntrc = nt
