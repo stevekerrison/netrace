@@ -93,7 +93,15 @@ class netsim_node:
     TNUM_TSTR = {0: 'l1d', 1: 'l1i', 2: 'l2', 3: 'mc', 4: None}
     TSTR_TNUM = {v: k for k, v in TNUM_TSTR.items()}
 
-    def __init__(self, netrace_id, netsim_position):
+    @staticmethod
+    def src_from_packet(packet):
+        return (packet.src_type, packet.data.src)
+
+    @staticmethod
+    def dst_from_packet(packet):
+        return (packet.dst_type, packet.data.dst)
+
+    def __init__(self, netrace_id, netsim_position, queues=['recv']):
         if not isinstance(netrace_id, tuple) or len(netrace_id) != 2:
             raise KeyError("netrace_id must be a tuple of (typestr, nodeid)")
         if netrace_id[0] not in self.TSTR_TNUM:
@@ -104,39 +112,59 @@ class netsim_node:
         # Use numerical type IDs after instantiation for efficiency
         self.nid = (self.TSTR_TNUM[netrace_id[0]], netrace_id[1])
         self.pos = netsim_position
-        self.sendq = deque()
-        self.recvq = deque()
-
-    def recv(self, pkt):
-        self.recvq.appendleft(pkt)
-
-    def send(self, pkt):
-        self.sendq.appendleft(pkt)
+        self.q = {n: deque() for n in queues}
+        self.active = []
+        self.cycle_adj = 0
+        self.rate = sys.maxsize
 
 
-class netsim_data:
+class netsim_route:
     """
         Track data from a packet as it moves between nodes
     """
-    def __init__(self, pkt, src):
+    def __init__(self, pkt, src, dst, net):
         self.pkt = pkt
+        self.net = net
+        self.dst = dst
         self.nodes = {src: pkt.PACKET_SIZE[pkt.data.type]}
+        self.chain = [src]
 
-    def add(self, node):
+    def open(self, node):
+        """
+            Add path along the route
+        """
         if node in self.nodes:
             raise KeyError("Node already registered for this packet")
         self.nodes[node] = 0
+        self.chain.append(node)
 
-    def move(self, nodeA, nodeB, bytes):
-        """Move data between nodes. Either node can be None (endpoint)"""
-        if nodeA == NodeB is None:
-            raise ValueError("At least one node must be specified")
-        if nodeB:
-            self.nodes[nodeB] += bytes
-        if nodeA:
-            self.nodes[nodeA] -= bytes
-            if self.nodes[nodeA] < 0:
-                raise ValueError("Sent more data than we had")
+    def propagate(self):
+        """
+            Move data along route, throttled by nodes. Returns nodes that have
+            sent all data so the network simulator can purge queues.
+        """
+        if len(self.chain) == 1:
+            if self.chain[0] == self.dst:
+                # Rate limit, or transfer all available data if no rate set
+                rate = min(self.dst.rate, self.nodes[self.dst])
+                self.nodes[self.dst] -= rate
+            else:
+                # Viable route not open yet, no data can move
+                pass
+        elif len(self.chain) > 1:
+            for (s, d) in zip(
+                    reversed(self.chain[:-1]), reversed(self.chain[1:])):
+                # Rate limit, or transfer all available data if no rate set
+                rate = min(s.rate, self.nodes[s])
+                self.nodes[s] -= rate
+                self.nodes[d] += rate
+        closed = []
+        # Close tail as far as the next waiting data
+        while len(self.chain) and not self.nodes[self.chain[0]]:
+            closed.append((self.chain[0], self.pkt))
+            del self.nodes[self.chain[0]]
+            del self.chain[0]
+        return closed
 
     def __len__(self):
         """Return the number of bytes still in transit"""
@@ -157,10 +185,10 @@ class netsim_basenet:
         self.bypos = {}
         self.bynid = {}
         self.nodes = []
-        self.pending = {}
         self.packets = set()
-        self.data = {}
+        self.routes = {}
         self.dependencies = {}
+        self.total_cycle_adj = 0
 
     def add_node(self, node):
         pos = node.pos
@@ -170,7 +198,6 @@ class netsim_basenet:
         if nid in self.bynid:
             raise KeyError("Node with ID '{}' already in system".format(nid))
         self.nodes.append(node)
-        self.pending[node] = set()
         self.bypos[pos] = node
         self.bynid[nid] = node
 
@@ -186,12 +213,21 @@ class netsim_basenet:
     def register(self, pkt):
         """Register a packet's presence and forward dependencies"""
         self.packets.add(pkt)
-        nid = (pkt.src_type, pkt.data.src)
-        self.data[pkt] = netsim_data(pkt, self.bynid[nid])
+        src = netsim_node.src_from_packet(pkt)
+        dst = netsim_node.dst_from_packet(pkt)
+        self.routes[pkt] = netsim_route(
+            pkt, self.bynid[src], self.bynid[dst], self)
         for dep in pkt.deps:
             if dep not in self.dependencies:
                 self.dependencies[dep] = set()
             self.dependencies[dep].add(pkt)
+
+    def clear(self, closures):
+        """
+            Clear queues and, when packets can be cleared, clean up historic
+            dependencies. Must be implemented by child class.
+        """
+        raise NotImplementedError
 
     def step(self):
         """
@@ -245,10 +281,11 @@ class netsim_zero(netsim_basenet):
             self.add_node(netsim_node(nid, pos))
             pos += 1
 
-    def queue(self, pkt, node):
-        self.data[pkt].add(node)
-        self.pending[node].add(pkt)
-        node.recv(pkt)
+    def route(self, pkt, node):
+        node.q['recv'].appendleft(pkt)
+        self.routes[pkt].open(node)
+        # Move all data to receiver straight away
+        self.routes[pkt].propagate()
 
     def inject(self, pkt):
         """Add packet to receiver queue"""
@@ -258,9 +295,52 @@ class netsim_zero(netsim_basenet):
             pkt.cycle_adj = pkt.data.cycle + max(
                 [dep.cycle_adj for dep in self.dependencies[pkt.data.id]])
         self.register(pkt)
-        nid = (pkt.dst_type, pkt.data.dst)
-        self.queue(pkt, self.bynid[nid])
+        # Zero network opens route to destination instantly
+        self.route(pkt, self.bynid[netsim_node.dst_from_packet(pkt)])
 
+    def clear(self, closures):
+        for node, pkt in closures:
+            if pkt not in node.active:
+                raise RuntimeError(
+                    "Packet {} was expected to be active on node {}".format(
+                        pkt.data.id, node))
+            node.active.remove(pkt)
+            # TODO: Choose queue? Probably a job for netsim_route.propagate()
+            if not len(self.routes[pkt]):
+                # Packet has sent all data, so clean up
+                if pkt.data.id in self.dependencies:
+                    # Reduce dependency list
+                    for dep in self.dependencies[pkt.data.id]:
+                        dep.deps.remove(pkt.data.id)
+                        if not len(dep.deps):
+                            # When all deps are gone, packet can be removed
+                            self.packets.remove(dep)
+                    # Packet deps and route no longer needed
+                    del self.dependencies[pkt.data.id]
+                    del self.routes[dep]
+
+    def step(self):
+        """
+            Progress each packet. In a zero network this is easy... just
+            take one item off each node's receive queue.
+        """
+        for pkt in self.routes:
+            pkt.cycle_adj += 1
+        nodes = [n for n in self.nodes if len(n.q['recv']) or len(n.active)]
+        closures = []
+        for n in nodes:
+            if len(n.active) > 1:
+                raise RuntimeError(
+                    "Node {} handling simultaneous receives".format(n))
+            elif len(n.active) == 1:
+                pkt = n.active[0]
+                closures += self.routes[pkt].propagate()
+            elif len(n.q['recv']):
+                # We're not active but can be
+                pkt = n.q['recv'].pop()
+                n.active.append(pkt)
+                closures += self.routes[pkt].propagate()
+        self.clear(closures)
 
 
 class netsim_benes(netsim_basenet):
@@ -469,8 +549,8 @@ class netsim:
                 self.drain()
                 break
             print(pkt)
-            self.network.inject(pkt)
             self.step(pkt.data.cycle)
+            self.network.inject(pkt)
 
     def __init__(self, nt, **kwargs):
         self.ntrc = nt
