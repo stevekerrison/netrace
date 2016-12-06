@@ -319,9 +319,13 @@ class netsim_zero(netsim_basenet):
                         if not len(dep.deps):
                             # When all deps are gone, packet can be removed
                             self.packets.remove(dep)
-                    # Packet deps and route no longer needed
+                    # Packet deps no longer needed
                     del self.dependencies[pkt.data.id]
-                    del self.routes[dep]
+                # Route is no longer needed
+                del self.routes[pkt]
+                if not pkt.data.num_deps:
+                    # Packets with no deps still need clearing up
+                    self.packets.remove(pkt)
 
     def step(self):
         """
