@@ -283,9 +283,13 @@ class netsim_zero(netsim_basenet):
 
     def route(self, pkt, node):
         node.q['recv'].appendleft(pkt)
-        self.routes[pkt].open(node)
-        # Move all data to receiver straight away
-        self.routes[pkt].propagate()
+        if (
+                netsim_node.dst_from_packet(pkt) !=
+                netsim_node.src_from_packet(pkt)):
+            # Invalidation requests appear as self-messages. Avoid cycle.
+            self.routes[pkt].open(node)
+            # Move all data to receiver straight away
+            self.routes[pkt].propagate()
 
     def inject(self, pkt):
         """Add packet to receiver queue"""
