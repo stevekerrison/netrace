@@ -225,15 +225,13 @@ class netsim_basenet:
         # A packet is immediately dispatchable if its dependencies have already
         # completed, or it has no dependencies.
         if pkt.data.id not in self.dependencies:
-            if pkt.data.cycle not in self.dispatchable:
-                self.dispatchable[pkt.data.cycle] = set()
             # Dependencies may have cleared already, but imposed a delay
             if pkt.data.id in self.delaycache:
                 cycle = pkt.data.cycle + self.delaycache[pkt.data.id]
                 del self.delaycache[pkt.data.id]
             else:
                 cycle = pkt.data.cycle
-            self.dispatchable[cycle].add(pkt.data.id)
+            self.mark_dispatch(cycle, pkt.data.id)
         else:
             # A dependent packet cannot be dispatched if one of its dependencies
             # hasn't cleared yet
@@ -246,9 +244,7 @@ class netsim_basenet:
                     cycle_adj = max(cycle_adj, dep.cycle_adj)
             if dispatchable:
                 cycle = pkt.data.cycle + cycle_adj
-                if cycle not in self.dispatchable:
-                    self.dispatchable[cycle] = set()
-                self.dispatchable[cycle].add(pkt.data.id)
+                self.mark_dispatch(cycle, pkt.data.id)
             else:
                 # A packet that cannot be dispatched now will be put in the
                 # dispatch table later, when all its dependency packets are
@@ -258,6 +254,11 @@ class netsim_basenet:
             if dep not in self.dependencies:
                 self.dependencies[dep] = set()
             self.dependencies[dep].add(pkt)
+
+    def mark_dispatch(self, cycle, pktid):
+        if cycle not in self.dispatchable:
+            self.dispatchable[cycle] = []
+        self.dispatchable[cycle].append(pktid)
 
     def inject(self, pkt):
         """Inject a packet into the network"""
@@ -377,9 +378,7 @@ class netsim_zero(netsim_basenet):
                         # All deps cleared, so the packet is dispatchable, and
                         # already exists, so must be registered and waiting.
                         cycle = self.packets[dep].data.cycle + pkt.cycle_adj
-                        if cycle not in self.dispatchable:
-                            self.dispatchable[cycle] = set()
-                        self.dispatchable[cycle].add(dep)
+                        self.mark_dispatch(cycle, dep)
                     # This dependency reference is no longer needed
                     self.dependencies[dep].remove(pkt)
                 # Route is no longer needed
