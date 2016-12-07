@@ -257,8 +257,8 @@ class netsim_basenet:
 
     def mark_dispatch(self, cycle, pktid):
         if cycle not in self.dispatchable:
-            self.dispatchable[cycle] = []
-        self.dispatchable[cycle].append(pktid)
+            self.dispatchable[cycle] = set()
+        self.dispatchable[cycle].add(pktid)
 
     def inject(self, pkt):
         """Inject a packet into the network"""
@@ -378,7 +378,9 @@ class netsim_zero(netsim_basenet):
                         # All deps cleared, so the packet is dispatchable, and
                         # already exists, so must be registered and waiting.
                         cycle = self.packets[dep].data.cycle + pkt.cycle_adj
-                        self.mark_dispatch(cycle, dep)
+                        if (self.cycle in self.dispatchable and dep not in
+                                self.dispatchable[self.cycle]):
+                            self.mark_dispatch(cycle, dep)
                     # This dependency reference is no longer needed
                     self.dependencies[dep].remove(pkt)
                 # Route is no longer needed
@@ -599,6 +601,7 @@ class netsim:
             self.network.cycle += 1
 
     def drain(self):
+        print(len(self.network.packets))
         """Step network until no more pending packets"""
         while len(self.network.packets):
             self.step(self.network.cycle + 1)
