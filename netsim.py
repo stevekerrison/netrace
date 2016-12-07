@@ -191,6 +191,7 @@ class netsim_basenet:
         self.packets = set()
         self.routes = {}
         self.dependencies = {}
+        self.cycle = 0
         self.total_cycle_adj = 0
 
     def add_node(self, node):
@@ -537,14 +538,14 @@ class netsim:
               len(result[netsim_node.TSTR_TNUM['l1i']]), tf))
 
     def step(self, target_cycle):
-        while self.cycle != target_cycle:
+        while self.network.cycle != target_cycle:
             self.network.step()
-            self.cycle += 1
+            self.network.cycle += 1
 
     def drain(self):
         """Step network until no more pending packets"""
         while len(self.network.packets):
-            self.step(self.cycle + 1)
+            self.step(self.network.cycle + 1)
         return self.network.total_cycle_adj
 
     def progress(self):
@@ -591,7 +592,6 @@ class netsim:
     def __init__(self, nt, **kwargs):
         self.ntrc = nt
         self.kwargs = kwargs
-        self.cycle = 0
         self.packets = 0
 
 
