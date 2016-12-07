@@ -390,7 +390,8 @@ class netsim_zero(netsim_basenet):
     def step(self):
         """
             Progress each packet. In a zero network this is easy... just
-            take one item off each node's receive queue.
+            take one item off each node's receive queue. Also inject packets
+            that can now be dispatched.
         """
         if self.cycle in self.dispatchable:
             for pktid in self.dispatchable[self.cycle]:
@@ -594,17 +595,12 @@ class netsim:
               len(result[netsim_node.TSTR_TNUM['l1i']]), tf))
 
     def step(self, target_cycle):
-        while self.network.cycle <= target_cycle:
+        while self.network.cycle < target_cycle:
             self.network.step()
             self.network.cycle += 1
 
     def drain(self):
         """Step network until no more pending packets"""
-        for p in self.network.packets:
-            print(self.network.packets[p])
-            print(self.network.dependencies[p])
-            print(self.network.packets[p].cycle_adj)
-            raise RuntimeError
         while len(self.network.packets):
             self.step(self.network.cycle + 1)
         return self.network.total_cycle_adj
@@ -647,8 +643,8 @@ class netsim:
                 break
             self.packets += 1
             # Simulate at least as far as this packet's original inject cycle
-            self.network.register(pkt)
             self.step(pkt.data.cycle)
+            self.network.register(pkt)
             last_pkt = pkt
 
     def __init__(self, nt, **kwargs):
