@@ -588,17 +588,16 @@ class netsim:
             self.network.cycle += 1
 
     def drain(self):
-        print(len(self.network.packets))
         """Step network until no more pending packets"""
         while len(self.network.packets):
             self.step(self.network.cycle + 1)
-        return self.network.total_cycle_adj
 
     def progress(self):
-        print("\r{:03.02f}% - {}/{}".format(
-            float(self.packets) / self.ntrc.hdr.num_packets * 100,
-              self.packets, self.ntrc.hdr.num_packets),
-              file=sys.stderr,
+        print(("\33[2K\r{:03.02f}%, packet {}/{}, cycle {}, tracking {} " +
+               "packets").format( float(self.packets) /
+                                 self.ntrc.hdr.num_packets * 100, self.packets,
+                                 self.ntrc.hdr.num_packets, self.network.cycle,
+                                 len(self.network.packets)), file=sys.stderr,
               end="")
 
     def sim(self):
