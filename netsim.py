@@ -25,6 +25,7 @@
                                         provide. Uses sqrt of number of nodes
                                         by default [default: None].
         -p, --progress                  Print progress to stderr
+        -l n, --packet-limit=n          Process no more than n packets.
 
     Arguments:
         <trace>                     A netrace compatible trace file from (Ge)M5
@@ -640,7 +641,9 @@ class netsim:
                     self.progress()
                     then = now
             pkt = self.ntrc.read_packet()
-            if not pkt:
+            if not pkt or (
+                    self.kwargs['packet_limit'] and
+                    self.packets >= int(self.kwargs['packet_limit'])):
                 if self.kwargs['progress']:
                     self.progress()
                     print(file=sys.stderr)
