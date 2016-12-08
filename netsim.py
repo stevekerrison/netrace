@@ -195,7 +195,6 @@ class netsim_basenet:
         self.routes = {}
         self.dependencies = {}
         self.cycle = 0
-        self.total_cycle_adj = 0
 
     def add_node(self, node):
         pos = node.pos
@@ -647,7 +646,8 @@ class netsim:
                 if self.kwargs['progress']:
                     self.progress()
                     print(file=sys.stderr)
-                print(self.drain(), last_pkt.data.cycle)
+                self.drain()
+                print(self.network.cycle-1, last_pkt.data.cycle)
                 break
             self.packets += 1
             # Simulate at least as far as this packet's original inject cycle
