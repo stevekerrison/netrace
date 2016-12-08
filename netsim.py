@@ -263,6 +263,9 @@ class netsim_basenet:
     def mark_dispatch(self, cycle, pktid):
         if cycle not in self.dispatchable:
             self.dispatchable[cycle] = set()
+        if pktid in self.dispatchable[cycle]:
+            raise RuntimeError(
+                "Packet {} already in dispatch table".format(pktid))
         self.dispatchable[cycle].add(pktid)
 
     def inject(self, pkt):
@@ -374,13 +377,13 @@ class netsim_zero(netsim_basenet):
                     if dep not in self.delaycache:
                         self.delaycache[dep] = 0
                     self.delaycache[dep] = pkt.cycle_adj
-                    if len(self.dependencies[dep]) == 1 and dep in self.packets:
+                    if (
+                            len(self.dependencies[dep]) == 1 and dep in
+                            self.packets):
                         # All deps cleared, so the packet is dispatchable, and
                         # already exists, so must be registered and waiting.
                         cycle = self.packets[dep].data.cycle + pkt.cycle_adj
-                        if (self.cycle in self.dispatchable and dep not in
-                                self.dispatchable[self.cycle]):
-                            self.mark_dispatch(cycle, dep)
+                        self.mark_dispatch(cycle, dep)
                     # This dependency reference is no longer needed
                     self.dependencies[dep].remove(pkt)
                 # Route is no longer needed
