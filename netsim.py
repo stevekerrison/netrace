@@ -232,28 +232,11 @@ class netsim_basenet:
             else:
                 cycle = pkt.data.cycle
             self.mark_dispatch(cycle, pkt.data.id)
-        else:
-            # A dependent packet cannot be dispatched if one of its dependencies
-            # hasn't cleared yet
-            dispatchable = True
-            cycle_adj = 0
-            for dep in self.dependencies[pkt.data.id]:
-                if dep in self.routes:
-                    dispatchable = False
-                else:
-                    cycle_adj = max(cycle_adj, dep.cycle_adj)
-            if dispatchable:
-                cycle = pkt.data.cycle + cycle_adj
-                self.mark_dispatch(cycle, pkt.data.id)
-            else:
-                # A packet that cannot be dispatched now will be put in the
-                # dispatch table later, when all its dependency packets are
-                # clear. This is handled by the clear() method.
-                pass
         for dep in pkt.deps:
             if dep not in self.dependencies:
                 self.dependencies[dep] = set()
             self.dependencies[dep].add(pkt)
+            self.update_delaycache(dep, 0)
         # Create route tracking for packet
         src = netsim_node.src_from_packet(pkt)
         dst = netsim_node.dst_from_packet(pkt)
@@ -263,6 +246,10 @@ class netsim_basenet:
     def mark_dispatch(self, cycle, pktid):
         if cycle not in self.dispatchable:
             self.dispatchable[cycle] = set()
+        if cycle < self.cycle:
+            raise RuntimeError(
+                "Packet {} being dispatched at {} when now is {}".format(
+                    pktid, cycle, self.cycle))
         if pktid in self.dispatchable[cycle]:
             raise RuntimeError(
                 "Packet {} already in dispatch table".format(pktid))
@@ -343,6 +330,11 @@ class netsim_zero(netsim_basenet):
             # Move all data to receiver straight away
             self.routes[pkt].propagate()
 
+    def update_delaycache(self, pktid, delay):
+        was = None if pktid not in self.delaycache else self.delaycache[pktid]
+        if was is None or delay > was:
+            self.delaycache[pktid] =  delay
+
     def inject(self, pkt):
         """Start routing packet"""
         pkt.cycle_adj = self.cycle - pkt.data.cycle
@@ -358,38 +350,33 @@ class netsim_zero(netsim_basenet):
             node.active.remove(pkt)
             if not len(node.active) and not len(node.q['recv']):
                 self.active_nodes.remove(node)
-            # TODO: Choose queue? Probably a job for netsim_route.propagate()
+            # If packet has sent all data, so clean up
             if not len(self.routes[pkt]):
-                # Packet has sent all data, so clean up
-                if pkt.cycle_adj > self.total_cycle_adj:
-                    self.total_cycle_adj = pkt.cycle_adj
-                """if pkt.data.id in self.dependencies:
-                    # Reduce dependency list
-                    for dep in self.dependencies[pkt.data.id]:
-                        dep.deps.remove(pkt.data.id)
-                        if not len(dep.deps):
-                            # When all deps are gone, packet can be removed
-                            del self.packets[dep.data.id]
-                    # Packet deps no longer needed
-                    del self.dependencies[pkt.data.id]"""
                 # Check if dependent packets can be dispatched now
                 for dep in pkt.deps:
-                    if dep not in self.delaycache:
-                        self.delaycache[dep] = 0
-                    self.delaycache[dep] = pkt.cycle_adj
+                    self.update_delaycache(dep, self.cycle - pkt.data.cycle)
                     if (
                             len(self.dependencies[dep]) == 1 and dep in
                             self.packets):
                         # All deps cleared, so the packet is dispatchable, and
                         # already exists, so must be registered and waiting.
-                        cycle = self.packets[dep].data.cycle + pkt.cycle_adj
-                        self.mark_dispatch(cycle, dep)
+                        self.mark_dispatch(self.packets[dep].data.cycle +
+                                           self.delaycache[dep], dep)
                     # This dependency reference is no longer needed
                     self.dependencies[dep].remove(pkt)
+                    if len(self.dependencies[dep]) == 0:
+                        del self.dependencies[dep]
+                if self.cycle <= pkt.data.cycle:
+                    raise RuntimeError((
+                        "Packet {} clearing at {}, which is contradictory " +
+                        "to its original trace cycle of {}").format(
+                            pkt.data.id, self.cycle, pkt.data.cycle))
                 # Route is no longer needed
                 del self.routes[pkt]
                 # Packet is no longer needed
                 del self.packets[pkt.data.id]
+                if pkt.data.id in self.dependencies:
+                    del self.dependencies[pkt.data.id]
 
     def step(self):
         """
@@ -397,11 +384,6 @@ class netsim_zero(netsim_basenet):
             take one item off each node's receive queue. Also inject packets
             that can now be dispatched.
         """
-        if self.cycle in self.dispatchable:
-            for pktid in self.dispatchable[self.cycle]:
-                self.inject(self.packets[pktid])
-        for pkt in self.routes:
-            pkt.cycle_adj += 1
         closures = []
         for n in self.active_nodes:
             if len(n.active) > 1:
@@ -417,6 +399,8 @@ class netsim_zero(netsim_basenet):
                 closures += self.routes[pkt].propagate()
         self.clear(closures)
         if self.cycle in self.dispatchable:
+            for pktid in self.dispatchable[self.cycle]:
+                self.inject(self.packets[pktid])
             del self.dispatchable[self.cycle]
 
 
