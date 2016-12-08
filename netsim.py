@@ -254,6 +254,11 @@ class netsim_basenet:
             if dep not in self.dependencies:
                 self.dependencies[dep] = set()
             self.dependencies[dep].add(pkt)
+        # Create route tracking for packet
+        src = netsim_node.src_from_packet(pkt)
+        dst = netsim_node.dst_from_packet(pkt)
+        self.routes[pkt] = netsim_route(
+            pkt, self.bynid[src], self.bynid[dst], self)
 
     def mark_dispatch(self, cycle, pktid):
         if cycle not in self.dispatchable:
@@ -336,12 +341,7 @@ class netsim_zero(netsim_basenet):
             self.routes[pkt].propagate()
 
     def inject(self, pkt):
-        """Add packet to dispatch queue"""
-        # Create route tracking for packet
-        src = netsim_node.src_from_packet(pkt)
-        dst = netsim_node.dst_from_packet(pkt)
-        self.routes[pkt] = netsim_route(
-            pkt, self.bynid[src], self.bynid[dst], self)
+        """Start routing packet"""
         pkt.cycle_adj = self.cycle - pkt.data.cycle
         # Zero network opens route to destination instantly
         self.route(pkt, self.bynid[netsim_node.dst_from_packet(pkt)])
