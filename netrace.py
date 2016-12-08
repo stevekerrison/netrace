@@ -126,9 +126,9 @@ class netrace:
             return None
         pkt = self.Packet._make(struct.unpack(self.PACKET_FORMAT, data))
         pkt = netrace_packet(pkt)
-        pkt.deps = []
+        pkt.deps = set()
         for i in range(pkt.data.num_deps):
-            pkt.deps.append(struct.unpack("I", self.fh.read(4))[0])
+            pkt.deps.add(struct.unpack("I", self.fh.read(4))[0])
         return pkt
 
     def header_str(self):
