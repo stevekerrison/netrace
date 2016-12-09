@@ -377,6 +377,8 @@ class netsim_zero(netsim_basenet):
                 del self.packets[pkt.data.id]
                 if pkt.data.id in self.dependencies:
                     del self.dependencies[pkt.data.id]
+                if pkt.data.id in self.delaycache:
+                    del self.delaycache[pkt.data.id]
 
     def step(self):
         """
