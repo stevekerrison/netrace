@@ -648,7 +648,8 @@ class netsim:
                     self.progress()
                     print(file=sys.stderr)
                 self.drain()
-                print(self.network.cycle-1, last_pkt.data.cycle)
+                if self.packets:
+                    print(self.network.cycle-1, last_pkt.data.cycle)
                 break
             self.packets += 1
             # Simulate at least as far as this packet's original inject cycle
