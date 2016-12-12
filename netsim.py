@@ -24,8 +24,9 @@
         -c mc --mem-controllers=mc      Number of memory controllers to
                                         provide. Uses sqrt of number of nodes
                                         by default [default: None].
-        -p, --progress                  Print progress to stderr
-        -l n, --packet-limit=n          Process no more than n packets.
+        -p --progress                   Print progress to stderr
+        -l n --packet-limit=n           Process no more than n packets.
+        -r reg --region=reg             Region to simulate [default: all]
 
     Arguments:
         <trace>                     A netrace compatible trace file from (Ge)M5
@@ -615,16 +616,28 @@ class netsim:
         mapping = self.gather_nodes(tf)
         print("Mapping nodes", file=sys.stderr)
         self.network.map_nodes(mapping)
+        if self.kwargs['region'] != 'all':
+            self.kwargs['region'] = int(self.kwargs['region'])
+            self.limit = 1
+            print("Seeking in compressed file", file=sys.stderr)
+        else:
+            self.kwargs['region'] = 0
+            self.limit = None
+        self.ntrc.seek(self.kwargs['region'], self.limit)
         print("Start simulation", file=sys.stderr)
         then = time.time() * 1000
         last_pkt = None
+        pkt = self.ntrc.read_packet()
+        if pkt and self.kwargs['region']:
+            ffwd = pkt.data.cycle
+            print("Fast forward simulation to cycle {}".format(ffwd))
+            self.network.cycle = ffwd
         while True:
             if self.kwargs['progress']:
                 now = time.time() * 1000
                 if now - then > 100:
                     self.progress()
                     then = now
-            pkt = self.ntrc.read_packet()
             if not pkt or (
                     self.kwargs['packet_limit'] and
                     self.packets >= int(self.kwargs['packet_limit'])):
@@ -639,6 +652,7 @@ class netsim:
             self.step(pkt.data.cycle)
             self.network.register(pkt)
             last_pkt = pkt
+            pkt = self.ntrc.read_packet()
 
     def __init__(self, nt, **kwargs):
         self.ntrc = nt
