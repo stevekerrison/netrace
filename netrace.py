@@ -141,7 +141,10 @@ class netrace:
         self.fh.seek(offset)
 
     def read_packet(self):
-
+        """Read a packet"""
+        if self.limit and self.fh.tell() >= self.limit:
+            # Reached limit specified during earlier seek()
+            return None
         data = self.fh.read(self.PACKET_LENGTH)
         if len(data) != self.PACKET_LENGTH:
             return None
