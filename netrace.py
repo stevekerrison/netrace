@@ -114,10 +114,31 @@ class netrace:
         self.read_regions(self.fh)
         self.header_size = self.fh.tell()
         self.header_str()
+        self.limit = (self.header_size + self.regions[-1].seek_offset +
+                      self.regions[-1].num_packets * self.PACKET_LENGTH)
 
     def rewind(self):
         """Go back to start of trace (first region, after header)"""
-        self.fh.seek(self.header_size)
+        self.seek(0)
+
+    def seek(self, region, limit=None):
+        """Seek to a particular region. Optionally set read limit.
+
+        Args:
+            region: The region number to start in.
+            limit: The number of regions to read (>=1).
+        """
+        offset = self.header_size + self.regions[region].seek_offset
+        self.limit = (self.header_size + self.regions[-1].seek_offset +
+                      self.regions[-1].num_packets * self.PACKET_LENGTH)
+        if limit:
+            if limit < 1:
+                raise ValueError(
+                    "Invalid region limit of {}".format(limit))
+            if region + limit < len(self.regions):
+                self.limit = (self.header_size +
+                              self.regions[region + limit].seek_offset)
+        self.fh.seek(offset)
 
     def read_packet(self):
 
