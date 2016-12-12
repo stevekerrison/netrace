@@ -596,12 +596,15 @@ class netsim:
             self.step(self.network.cycle + 1)
 
     def progress(self):
-        print(("\33[2K\r{:03.02f}%, packet {}/{}, cycle {}, tracking {} " +
-               "packets").format( float(self.packets) /
-                                 self.ntrc.hdr.num_packets * 100, self.packets,
-                                 self.ntrc.hdr.num_packets, self.network.cycle,
-                                 len(self.network.packets)), file=sys.stderr,
-              end="")
+        num_packets = self.ntrc.hdr.num_packets
+        if self.limit:
+            num_packets = self.ntrc.regions[self.kwargs['region']].num_packets
+        print((
+            "\33[2K\r{:03.02f}%, packet {}/{}, cycle {}, tracking {} " +
+            "packets").format(
+                float(self.packets) /num_packets * 100, self.packets,
+                num_packets, self.network.cycle, len(self.network.packets)),
+              file=sys.stderr, end="")
 
     def sim(self):
         classes = {x.__name__[7:]: x for x in netsim_basenet.__subclasses__()}
