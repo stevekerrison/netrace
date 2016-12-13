@@ -300,7 +300,8 @@ class netsim_zero(netsim_basenet):
         l1 = mapping[tdec['l1i']]
         l2 = mapping[tdec['l2']]
         mc = mapping[tdec['mc']]
-        assert(len(l1) == len(l2) == self.num_nodes)
+        if len(l1) != len(l2) != self.num_nodes:
+            raise ValueError("Expected number of L1/L2 to equal node count")
         pos = 0
         for nodeid in l1:
             nid = ('l1d', nodeid)
