@@ -430,7 +430,10 @@ class netsim_benes(netsim_basenet):
                     channels - nodes, (channels-num_nodes)/num_nodes * 100))
         self.channels = channels
         self.bits = int(self.ARGS['--switchbits'])
-        assert(2**self.bits < self.channels)
+        if 2**self.bits >= self.channels:
+            raise ValueError(
+                "Network of {} bits cannot accommodate {} channels".format(
+                    self.bits, self.channels))
         self.ports = 2**self.bits
         # Using my paper, A Benes Based NoC Switching Architecture for
         # Mixed Criticality Embedded Systems
