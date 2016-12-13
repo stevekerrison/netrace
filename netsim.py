@@ -117,7 +117,7 @@ class netsim_node:
         self.nid = (self.TSTR_TNUM[netrace_id[0]], netrace_id[1])
         self.pos = netsim_position
         self.q = {n: deque() for n in queues}
-        self.active = []
+        self.active = {}
         self.cycle_adj = 0
         self.rate = sys.maxsize
 
@@ -349,7 +349,7 @@ class netsim_zero(netsim_basenet):
                 raise RuntimeError(
                     "Packet {} was expected to be active on node {}".format(
                         pkt.data.id, node))
-            node.active.remove(pkt)
+            del node.active[pkt]
             if not len(node.active) and not len(node.q['recv']):
                 self.active_nodes.remove(node)
             # If packet has sent all data, so clean up
@@ -394,12 +394,12 @@ class netsim_zero(netsim_basenet):
                 raise RuntimeError(
                     "Node {} handling simultaneous receives".format(n))
             elif len(n.active) == 1:
-                pkt = n.active[0]
+                pkt = n.active.popitem()
                 closures += self.routes[pkt].propagate()
             elif len(n.q['recv']):
                 # We're not active but can be
                 pkt = n.q['recv'].pop()
-                n.active.append(pkt)
+                n.active[pkt] = None
                 closures += self.routes[pkt].propagate()
         self.clear(closures)
         if self.cycle in self.dispatchable:
