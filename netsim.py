@@ -244,6 +244,11 @@ class netsim_basenet:
         self.routes[pkt] = netsim_route(
             pkt, self.bynid[src], self.bynid[dst], self)
 
+    def update_delaycache(self, pktid, delay):
+        was = None if pktid not in self.delaycache else self.delaycache[pktid]
+        if was is None or delay > was:
+            self.delaycache[pktid] = delay
+
     def mark_dispatch(self, cycle, pktid):
         if cycle not in self.dispatchable:
             self.dispatchable[cycle] = set()
@@ -331,11 +336,6 @@ class netsim_zero(netsim_basenet):
             self.routes[pkt].open(node)
             # Move all data to receiver straight away
             self.routes[pkt].propagate()
-
-    def update_delaycache(self, pktid, delay):
-        was = None if pktid not in self.delaycache else self.delaycache[pktid]
-        if was is None or delay > was:
-            self.delaycache[pktid] = delay
 
     def inject(self, pkt):
         """Start routing packet"""
