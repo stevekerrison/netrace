@@ -492,32 +492,35 @@ class netsim_mesh(netsim_basenet):
         l1 = mapping[tdec['l1i']]
         l2 = mapping[tdec['l2']]
         mc = mapping[tdec['mc']]
-        assert(len(l1) == len(l2) == self.num_nodes)
-        assert(len(mc) == self.xy)
+        if len(l1) != len(l2) != self.num_nodes:
+            raise ValueError("Expected number of L1/L2 to equal node count")
+        if len(mc) != self.xy:
+            raise ValueError("Expected {} MCs, got {}".format(len(mc),
+                                                              self.xy))
         if not (l1 == l2):
             raise ValueError("Expected list of l1 and l2 IDs to be same")
         # TODO: Better mapping, or more options?
         x = 0
         y = 0
-        for i in range(l1):
+        for nodeid in l1:
             # TODO: of l1i == l1i == l2?
             nid = ('l1d', nodeid)
-            self.add_node(netsim_node(nid), (x, y))
+            self.add_node(netsim_node(nid, (x, y)))
             nid = ('l1i', nodeid)
-            self.add_node(netsim_node(nid), (x + 1, y))
+            self.add_node(netsim_node(nid, (x + 1, y)))
             nid = ('l2', nodeid)
-            self.add_node(netsim_node(nid), (x + 2, y))
+            self.add_node(netsim_node(nid, (x + 2, y)))
             x = x + 3 if x + 3 < self.xy * 3 else 0
             y = y if x else y + 1
-            if x + 1 == self.xy * 3:
+            if x / 3 == self.xy / 2:
                 # Skip a row in the middle for mem controllers
                 x += 1
         y = 0
-        x = 3 * (self.xy / 2)
-        for i in range(mc):
+        x = 3 * (self.xy // 2)
+        for nodeid in mc:
             # MCs straight down the middle
             nid = ('mc', nodeid)
-            self.add_node(netsim_node(nid), (x, y))
+            self.add_node(netsim_node(nid, (x, y)))
             y += 1
 
 
