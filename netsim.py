@@ -552,6 +552,9 @@ class netsim:
                 raise ValueError("Expected an L2 cache bank per L1")
             if len(mapping[tdec['mc']]) != expect_mc:
                 raise ValueError("Mismatched number of MCs in cache/sys")
+            # Ensure maps are sorted
+            for m in mapping:
+                mapping[m] = sorted(mapping[m])
             return mapping
         mapping = {
             tdec['l1i']: set(),
@@ -583,6 +586,9 @@ class netsim:
                 pickle.dump(mapping, f, pickle.HIGHEST_PROTOCOL)
         # Allow resumption of simulation after a scan for nodes
         self.ntrc.rewind()
+        # Ensure maps are sorted
+        for m in mapping:
+            mapping[m] = sorted(mapping[m])
         return mapping
 
     def map(self):
