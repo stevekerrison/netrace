@@ -218,7 +218,7 @@ class netsim_basenet:
         """Register a packet which will be injected now or in the future"""
         pkt.cycle_adj = 0
         self.packets[pkt.data.id] = pkt
-        if ( self.cycle in self.dispatchable and pkt.data.id in
+        if (self.cycle in self.dispatchable and pkt.data.id in
                 self.dispatchable[self.cycle]):
             raise RuntimeError(
                 "Packet {} marked for dispatch before registration".format(
@@ -335,7 +335,7 @@ class netsim_zero(netsim_basenet):
     def update_delaycache(self, pktid, delay):
         was = None if pktid not in self.delaycache else self.delaycache[pktid]
         if was is None or delay > was:
-            self.delaycache[pktid] =  delay
+            self.delaycache[pktid] = delay
 
     def inject(self, pkt):
         """Start routing packet"""
@@ -406,7 +406,6 @@ class netsim_zero(netsim_basenet):
             for pktid in self.dispatchable[self.cycle]:
                 self.inject(self.packets[pktid])
             del self.dispatchable[self.cycle]
-
 
 
 class netsim_benes(netsim_basenet):
@@ -609,7 +608,7 @@ class netsim:
         print((
             "\33[2K\r{:03.02f}%, packet {}/{}, cycle {}, tracking {} " +
             "packets").format(
-                float(self.packets) /num_packets * 100, self.packets,
+                float(self.packets) / num_packets * 100, self.packets,
                 num_packets, self.network.cycle, len(self.network.packets)),
               file=sys.stderr, end="")
 
