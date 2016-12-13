@@ -478,17 +478,37 @@ class netsim_mesh(netsim_basenet):
 
         Options:
             -h --help                   This help text
-            -d dirs --directions=dirs   Number of directions per switch
+            -d dirs --directions=dirs   Number of directions per switch on
+                                        their 2D plane. Range: 2--4
                                         [default: 2]
             -b bits --buffering=bits    Amount of buffering per port
                                         [default: 128]
     """
+    class switch(netsim_node):
+        """
+            Special sublcass of netsim_node that provide routing for
+            mesh networks.
+        """
+        def __init__(self, netrace_id, netsim_position, directions):
+            self.directions = directions
+            if directions not in range(2, 5):
+                raise ValueError(
+                    "Switch cannot have {} directions".format(directions))
+            super().__init__(netrace_id, netsim_position,
+                             list(range(directions)) +
+                             ['l1d', 'l1i', 'l2', 'mc'])
+
     def __init__(self, argstr, num_nodes):
         super().__init__(argstr, num_nodes)
         self.xy = int(math.sqrt(self.num_nodes))
-        assert(self.xy == math.sqrt(self.num_nodes))
+        if self.xy != math.sqrt(self.num_nodes):
+            raise ValueError(
+                "{} nodes does not a square make".format(self.num_nodes))
         self.buffering = int(self.ARGS['--buffering'])
         self.directions = int(self.ARGS['--directions'])
+        if self.directions not in range(2, 5):
+            raise ValueError(
+                "Cannot have {} directions".format(self.directions))
 
     def map_nodes(self, mapping):
         tdec = netsim_node.TSTR_TNUM
@@ -505,26 +525,34 @@ class netsim_mesh(netsim_basenet):
         # TODO: Better mapping, or more options?
         x = 0
         y = 0
+        # Network is a single layer of routers, each with L2, L1D and L1I,
+        # and some with a mem controller. Z address indicates destination type.
+        tdec = netsim_node.TSTR_TNUM
+        # Add endpoints that exist everywhere
         for nodeid in l1:
-            # TODO: of l1i == l1i == l2?
             nid = ('l1d', nodeid)
-            self.add_node(netsim_node(nid, (x, y)))
+            self.add_node(netsim_node(nid, (x, y, tdec['l1d'])))
             nid = ('l1i', nodeid)
-            self.add_node(netsim_node(nid, (x + 1, y)))
+            self.add_node(netsim_node(nid, (x, y, tdec['l1i'])))
             nid = ('l2', nodeid)
-            self.add_node(netsim_node(nid, (x + 2, y)))
-            x = x + 3 if x + 3 < self.xy * 3 else 0
-            y = y if x else y + 1
-            if x / 3 == self.xy / 2:
-                # Skip a row in the middle for mem controllers
-                x += 1
-        y = 0
-        x = 3 * (self.xy // 2)
+            self.add_node(netsim_node(nid, (x, y, tdec['l2'])))
+            nid = (None, nodeid)
+            self.add_node(self.switch(nid, (x, y, tdec[None]),
+                                      self.directions))
+            x += 1
+            if x % self.xy == 0:
+                y += 1
+                x = 0
+        # Add MCs in a "diamond" configuration
+        if len(mc) != 8:
+            raise NotImplementedError("Currently only 8 MCs supported")
+        mcpos = [x + (tdec['mc'],) for x in
+                 [(3, 2), (4, 2), (2, 3), (5, 3),
+                  (2, 4), (5, 4), (3, 5), (4, 5)]]
         for nodeid in mc:
-            # MCs straight down the middle
             nid = ('mc', nodeid)
-            self.add_node(netsim_node(nid, (x, y)))
-            y += 1
+            self.add_node(netsim_node(nid, mcpos.pop(0)))
+
 
 
 class netsim:
