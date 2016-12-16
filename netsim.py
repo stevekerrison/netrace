@@ -479,8 +479,8 @@ class netsim_mesh(netsim_basenet):
 
         Options:
             -h --help                   This help text
-            -d dirs --directions=dirs   Number of directions per switch on
-                                        their 2D plane. Range: 2--4
+            -d dims --dimensions=dims   Number of dimensions in which the mesh
+                                        can be traversed. Range: 2--4.
                                         [default: 2]
             -b bits --buffering=bits    Amount of buffering per port
                                         [default: 128]
@@ -490,13 +490,13 @@ class netsim_mesh(netsim_basenet):
             Special sublcass of netsim_node that provide routing for
             mesh networks.
         """
-        def __init__(self, netrace_id, netsim_position, directions):
-            self.directions = directions
-            if directions not in range(2, 5):
+        def __init__(self, netrace_id, netsim_position, dimensions):
+            self.dimensions = dimensions
+            if dimensions not in range(2, 5):
                 raise ValueError(
-                    "Switch cannot have {} directions".format(directions))
+                    "Switch cannot have {} dimensions".format(dimensions))
             super().__init__(netrace_id, netsim_position,
-                             list(range(directions)) +
+                             list(range(dimensions)) +
                              ['l1d', 'l1i', 'l2', 'mc'])
 
     def __init__(self, argstr, num_nodes):
@@ -506,10 +506,10 @@ class netsim_mesh(netsim_basenet):
             raise ValueError(
                 "{} nodes does not a square make".format(self.num_nodes))
         self.buffering = int(self.ARGS['--buffering'])
-        self.directions = int(self.ARGS['--directions'])
-        if self.directions not in range(2, 5):
+        self.dimensions = int(self.ARGS['--dimensions'])
+        if self.dimensions not in range(2, 5):
             raise ValueError(
-                "Cannot have {} directions".format(self.directions))
+                "Cannot have {} dimensions".format(self.dimensions))
 
     def route(self, pkt, dst):
         """
@@ -547,12 +547,13 @@ class netsim_mesh(netsim_basenet):
         dpos = self.bynid[netsim_node.dst_from_packet(pkt)].pos[:2]
         while spos != dpos:
             dimelms = list(zip(spos, dpos))
-            if self.directions == 4 and (all(
+            if self.dimensions == 4 and (all(
                     d[0] > d[1] for d in dimelms) or all(
                         d[0] < d[1] for d in dimelms)):
                 # Diagonal positioning if enough dimensions defined
+                dim = 0
                 raise NotImplementedError("Route in NE/SW diagonal")
-            elif self.directions == 3 and all(
+            elif self.dimensions == 3 and all(
                     d[0] != d[1] for d in dimelms):
                 # Diagonal positioning if enough dimensions defined
                 raise NotImplementedError("Route in NW/SE diagonal")
@@ -594,7 +595,7 @@ class netsim_mesh(netsim_basenet):
             self.add_node(netsim_node(nid, (x, y, tdec['l2'])))
             nid = (None, nodeid)
             self.add_node(self.switch(nid, (x, y, tdec[None]),
-                                      self.directions))
+                                      self.dimensions))
             x += 1
             if x % self.xy == 0:
                 y += 1
@@ -620,10 +621,10 @@ class netsim_mesh(netsim_basenet):
         for n in self.active_nodes:
             # First process active queues
             dirs = set(n.q.keys())
-            if len(n.active) > self.directions * 2:
+            if len(n.active) > self.dimensions * 2:
                 raise RuntimeError(
                     "Node {} handling more than {} simultaneous routes".format(
-                        n, self.directions * 2))
+                        n, self.dimensions * 2))
             for pkt, d in n.active.values():
                 closures += self.routes[pkt].propagate()
                 dirs.remove(d)
