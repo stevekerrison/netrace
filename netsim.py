@@ -549,7 +549,7 @@ class netsim_mesh(netsim_basenet):
         dpos = self.bynid[netsim_node.dst_from_packet(pkt)].pos[:2]
         if dposfull != sposfull and sposfull[2] != 4:
             # Get to the switch
-            path.append(('u', (spos[0], spos[1], 4)))
+            path.append(('d', (spos[0], spos[1], 4)))
         while spos != dpos:
             dimelms = list(zip(spos, dpos))
             if self.dimensions >= 4 and (all(
@@ -571,29 +571,29 @@ class netsim_mesh(netsim_basenet):
                 else:
                     spos = (spos[0] + 1, spos[1] - 1)
                     ingress = 'br'
-            elif dimelms[0][0] != dimelms[0][1]:
-                # Vertical dimension
-                if spos[0] > dpos[0]:
-                    spos = (spos[0] - 1, spos[1])
-                    ingress = 't'
-                else:
-                    spos = (spos[0] + 1, spos[1])
-                    ingress = 'b'
             elif dimelms[1][0] != dimelms[1][1]:
-                # Horizontal dimension
+                # Vertical dimension
                 if spos[1] > dpos[1]:
                     spos = (spos[0], spos[1] - 1)
-                    ingress = 'r'
+                    ingress = 't'
                 else:
                     spos = (spos[0], spos[1] + 1)
+                    ingress = 'b'
+            elif dimelms[0][0] != dimelms[0][1]:
+                # Horizontal dimension
+                if spos[0] > dpos[0]:
+                    spos = (spos[0] - 1, spos[1])
+                    ingress = 'r'
+                else:
+                    spos = (spos[0] + 1, spos[1])
                     ingress = 'l'
             path.append((ingress, spos))
         sposfull = self.routes[pkt].chain[0].pos
         dposfull = self.bynid[netsim_node.dst_from_packet(pkt)].pos
         if sposfull != dposfull:
-            path.append(('d', dposfull))
-        print(path)
-        raise NotImplementedError("WH")
+            path.append(('u', dposfull))
+        pkt.path = path
+        self.route(pkt, self.bynid[netsim_node.dst_from_packet(pkt)])
 
     def map_nodes(self, mapping):
         tdec = netsim_node.TSTR_TNUM
