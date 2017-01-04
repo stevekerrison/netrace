@@ -543,28 +543,56 @@ class netsim_mesh(netsim_basenet):
         pkt.cycle_adj = self.cycle - pkt.data.cycle
         # Plan the packet's route
         path = []
+        sposfull = self.routes[pkt].chain[0].pos
+        dposfull = self.bynid[netsim_node.dst_from_packet(pkt)].pos
         spos = self.routes[pkt].chain[0].pos[:2]
         dpos = self.bynid[netsim_node.dst_from_packet(pkt)].pos[:2]
+        if dposfull != sposfull and sposfull[2] != 4:
+            # Get to the switch
+            path.append(('u', (spos[0], spos[1], 4)))
         while spos != dpos:
             dimelms = list(zip(spos, dpos))
-            if self.dimensions == 4 and (all(
+            if self.dimensions >= 4 and (all(
                     d[0] > d[1] for d in dimelms) or all(
                         d[0] < d[1] for d in dimelms)):
-                # Diagonal positioning if enough dimensions defined
-                dim = 0
-                raise NotImplementedError("Route in NE/SW diagonal")
-            elif self.dimensions == 3 and all(
+                # Diagonal positioning (NE/SW) if enough dimensions defined
+                if spos[0] > dpos[0]:
+                    spos = tuple(d - 1 for d in spos)
+                    ingress = 'tr'
+                else:
+                    spos = tuple(d + 1 for d in spos)
+                    ingress = 'bl'
+            elif self.dimensions >= 3 and all(
                     d[0] != d[1] for d in dimelms):
-                # Diagonal positioning if enough dimensions defined
-                raise NotImplementedError("Route in NW/SE diagonal")
+                # Diagonal positioning (NW/SE) if enough dimensions defined
+                if spos[0] > dpos[0]:
+                    spos = (spos[0] - 1, spos[1] + 1)
+                    ingress = 'tl'
+                else:
+                    spos = (spos[0] + 1, spos[1] - 1)
+                    ingress = 'br'
             elif dimelms[0][0] != dimelms[0][1]:
                 # Vertical dimension
-                raise NotImplementedError("Route in N/S")
+                if spos[0] > dpos[0]:
+                    spos = (spos[0] - 1, spos[1])
+                    ingress = 't'
+                else:
+                    spos = (spos[0] + 1, spos[1])
+                    ingress = 'b'
             elif dimelms[1][0] != dimelms[1][1]:
-                raise NotImplementedError("Route in W/E")
-            elif dimelms[2][0] != dimelms[2][1]:
-                raise NotImplementedError("Route in through layers")
-        print(spos, dpos)
+                # Horizontal dimension
+                if spos[1] > dpos[1]:
+                    spos = (spos[0], spos[1] - 1)
+                    ingress = 'r'
+                else:
+                    spos = (spos[0], spos[1] + 1)
+                    ingress = 'l'
+            path.append((ingress, spos))
+        sposfull = self.routes[pkt].chain[0].pos
+        dposfull = self.bynid[netsim_node.dst_from_packet(pkt)].pos
+        if sposfull != dposfull:
+            path.append(('d', dposfull))
+        print(path)
         raise NotImplementedError("WH")
 
     def map_nodes(self, mapping):
