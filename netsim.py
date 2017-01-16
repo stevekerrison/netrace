@@ -643,6 +643,7 @@ class netsim_mesh(netsim_basenet):
         """
         closures = []
         newactive = set()
+        progressable_packets = set()
         for n in self.active_nodes:
             # First process active queues
             dirs = set(n.q.keys())
@@ -651,24 +652,30 @@ class netsim_mesh(netsim_basenet):
                     "Node {} handling more than {} simultaneous routes".format(
                         n.pos, self.dimensions * 2 + 4))
             for pkt, d in n.active.items():
-                close = self.routes[pkt].propagate()
-                closures += close
+                # These have active routes, propagate later
+                """close = self.routes[pkt].propagate()
+                closures += (close, d)"""
+                progressable_packets.add(pkt)
                 dirs.remove(d)
             for d in dirs:
                 if len(n.q[d]):
                     pkt = n.q[d].pop()
-                    print(self.routes[pkt].path, self.routes[pkt].chain)
-                    print(n.pos)
+                    # print(self.routes[pkt].path, self.routes[pkt].chain)
+                    # print(n.pos)
                     n.active[pkt] = d
-                    closures += self.routes[pkt].propagate()
+                    self.routes[pkt].open(n)
+                    progressable_packets.add(pkt)
+                    # closures += self.routes[pkt].propagate()
                     if len(self.routes[pkt].path):
                         hop = self.routes[pkt].path[0]
-                        print(pkt, hop)
+                        # print(pkt, hop)
                         self.route(pkt, hop)
                         node = self.bypos[hop[1]]
                         del self.routes[pkt].path[0]
                         if node not in self.active_nodes:
                             newactive.add(node)
+        for p in progressable_packets:
+            closures += self.routes[pkt].propagate()
         self.active_nodes |= newactive
         self.clear(closures)
         if self.cycle in self.dispatchable:
