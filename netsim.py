@@ -684,47 +684,53 @@ class netsim_mesh(netsim_basenet):
             del self.dispatchable[self.cycle]
 
     def clear(self, closures):
-        for node, (d, pkt) in closures:
+        finpkts = set()
+        for node, pkt in closures:
+            if netsim_node.src_from_packet(pkt) == node.nid:
+                # No queue used at the sender
+                continue
             if pkt not in node.active:
                 raise RuntimeError(
                     "Packet {} was expected to be active on node {}".format(
-                        pkt.data.id, node))
-            node.active.remove(pkt)
-            if not len(node.active) and not len(node.q['recv']):
+                        pkt.data.id, node.pos))
+            del node.active[pkt]
+            if not len(node.active) and not (
+                    sum(map(len, [q for q in node.q]))):
                 self.active_nodes.remove(node)
-            # If packet has sent all data, so clean up
             if not len(self.routes[pkt]):
-                # Check if dependent packets can be dispatched now
-                for dep in pkt.deps:
-                    self.update_delaycache(dep, self.cycle - pkt.data.cycle)
-                    if (
-                            len(self.dependencies[dep]) == 1 and dep in
-                            self.packets):
-                        # All deps cleared, so the packet is dispatchable, and
-                        # already exists, so must be registered and waiting.
-                        self.mark_dispatch(self.packets[dep].data.cycle +
-                                           self.delaycache[dep], dep)
-                    # This dependency reference is no longer needed
-                    self.dependencies[dep].remove(pkt)
-                    if len(self.dependencies[dep]) == 0:
-                        del self.dependencies[dep]
-                if self.cycle <= pkt.data.cycle:
-                    raise RuntimeError((
-                        "Packet {} clearing at {}, which is contradictory " +
-                        "to its original trace cycle of {}").format(
-                            pkt.data.id, self.cycle, pkt.data.cycle))
-                """print(
-                    "Retiring {} ORIG:{}, NOW:{}".format(pkt.data.id,
-                                                         pkt.data.cycle,
-                                                         self.cycle))"""
-                # Route is no longer needed
-                del self.routes[pkt]
-                # Packet is no longer needed
-                del self.packets[pkt.data.id]
-                if pkt.data.id in self.dependencies:
-                    del self.dependencies[pkt.data.id]
-                if pkt.data.id in self.delaycache:
-                    del self.delaycache[pkt.data.id]
+                finpkts.add(pkt)
+        for pkt in finpkts:
+           # Check if dependent packets can be dispatched now
+           for dep in pkt.deps:
+               self.update_delaycache(dep, self.cycle - pkt.data.cycle)
+               if (
+                       len(self.dependencies[dep]) == 1 and dep in
+                       self.packets):
+                   # All deps cleared, so the packet is dispatchable, and
+                   # already exists, so must be registered and waiting.
+                   self.mark_dispatch(self.packets[dep].data.cycle +
+                                      self.delaycache[dep], dep)
+               # This dependency reference is no longer needed
+               self.dependencies[dep].remove(pkt)
+               if len(self.dependencies[dep]) == 0:
+                   del self.dependencies[dep]
+           if self.cycle <= pkt.data.cycle:
+               raise RuntimeError((
+                   "Packet {} clearing at {}, which is contradictory " +
+                   "to its original trace cycle of {}").format(
+                       pkt.data.id, self.cycle, pkt.data.cycle))
+           """print(
+               "Retiring {} ORIG:{}, NOW:{}".format(pkt.data.id,
+                                                    pkt.data.cycle,
+                                                    self.cycle))"""
+           # Route is no longer needed
+           del self.routes[pkt]
+           # Packet is no longer needed
+           del self.packets[pkt.data.id]
+           if pkt.data.id in self.dependencies:
+               del self.dependencies[pkt.data.id]
+           if pkt.data.id in self.delaycache:
+               del self.delaycache[pkt.data.id]
 
 
 class netsim:
