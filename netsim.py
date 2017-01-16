@@ -495,8 +495,9 @@ class netsim_mesh(netsim_basenet):
             if dimensions not in range(2, 5):
                 raise ValueError(
                     "Switch cannot have {} dimensions".format(dimensions))
+            dirs = ['l', 'r', 't', 'b', 'br', 'tl', 'bl', 'tr'][:2*dimensions]
             super().__init__(netrace_id, netsim_position,
-                             list(range(dimensions)) +
+                             dirs +
                              ['l1d', 'l1i', 'l2', 'mc'])
 
     def __init__(self, argstr, num_nodes):
@@ -516,20 +517,12 @@ class netsim_mesh(netsim_basenet):
             Dimension-order wormhole routing towards destination.
             A new hop opens only once the inbound step becomes active
         """
-        # First, decide the next hop towards the destination
-        for n in self.routes[pkt].nodes:
-            print(n.pos)
-        raise NotImplementedError
-        if not len(node.active) and not len(node.q['recv']):
-            self.active_nodes.add(node)
-        node.q['recv'].appendleft(pkt)
-        if (
-                netsim_node.dst_from_packet(pkt) !=
-                netsim_node.src_from_packet(pkt)):
-            # Invalidation requests appear as self-messages. Avoid cycle.
-            self.routes[pkt].open(node)
-            # Move all data to receiver straight away
-            self.routes[pkt].propagate()
+        q, pos = dst
+        node = self.bypos[pos]
+        if q not in node.q:
+            print (node.q)
+            raise KeyError(q)
+        node.q[q].appendleft(pkt)
 
     def inject(self, pkt):
         """
@@ -549,7 +542,7 @@ class netsim_mesh(netsim_basenet):
         dpos = self.bynid[netsim_node.dst_from_packet(pkt)].pos[:2]
         if dposfull != sposfull and sposfull[2] != 4:
             # Get to the switch
-            path.append(('d', (spos[0], spos[1], 4)))
+            path.append(('b', (spos[0], spos[1], 4)))
         while spos != dpos:
             dimelms = list(zip(spos, dpos))
             if self.dimensions >= 4 and (all(
@@ -591,9 +584,13 @@ class netsim_mesh(netsim_basenet):
         sposfull = self.routes[pkt].chain[0].pos
         dposfull = self.bynid[netsim_node.dst_from_packet(pkt)].pos
         if sposfull != dposfull:
-            path.append(('u', dposfull))
-        pkt.path = path
-        self.route(pkt, self.bynid[netsim_node.dst_from_packet(pkt)])
+            path.append(('t', dposfull))
+        self.routes[pkt].path = path
+        self.route(pkt, path[0])
+        node = self.bypos[path[0][1]]
+        del path[0]
+        if node not in self.active_nodes:
+            self.active_nodes.add(node)
 
     def map_nodes(self, mapping):
         tdec = netsim_node.TSTR_TNUM
@@ -649,17 +646,29 @@ class netsim_mesh(netsim_basenet):
         for n in self.active_nodes:
             # First process active queues
             dirs = set(n.q.keys())
-            if len(n.active) > self.dimensions * 2:
+            if len(n.active) > self.dimensions * 2 + 4:
                 raise RuntimeError(
                     "Node {} handling more than {} simultaneous routes".format(
-                        n, self.dimensions * 2))
-            for pkt, d in n.active.values():
-                closures += self.routes[pkt].propagate()
+                        n.pos, self.dimensions * 2 + 4))
+            for pkt, d in n.active.items():
+                close = self.routes[pkt].propagate()
+                closures += close
                 dirs.remove(d)
             for d in dirs:
-                pkt = n.q[d].pop()
-                n.active[pkt] = d
-                closures += self.routes[pkt].propagate()
+                if len(n.q[d]):
+                    pkt = n.q[d].pop()
+                    print(self.routes[pkt].path, self.routes[pkt].chain)
+                    print(n.pos)
+                    n.active[pkt] = d
+                    closures += self.routes[pkt].propagate()
+                    hop = self.routes[pkt].path[0]
+                    print(pkt, hop)
+                    self.route(pkt, hop)
+                    node = self.bypos[hop[1]]
+                    del self.routes[pkt].path[0]
+                    if node not in self.active_nodes:
+                        self.active_nodes.add(node)
+                    raise NotImplementedError
         self.clear(closures)
         if self.cycle in self.dispatchable:
             for pktid in self.dispatchable[self.cycle]:
