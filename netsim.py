@@ -549,10 +549,10 @@ class netsim_mesh(netsim_basenet):
                         d[0] < d[1] for d in dimelms)):
                 # Diagonal positioning (NE/SW) if enough dimensions defined
                 if spos[0] > dpos[0]:
-                    spos = tuple(d - 1 for d in spos)
+                    spos = (spos[0] - 1, spos[1] - 1)
                     ingress = 'tr'
                 else:
-                    spos = tuple(d + 1 for d in spos)
+                    spos = (spos[0] + 1, spos[1] + 1)
                     ingress = 'bl'
             elif self.dimensions >= 3 and all(
                     d[0] != d[1] for d in dimelms):
@@ -579,7 +579,7 @@ class netsim_mesh(netsim_basenet):
                 else:
                     spos = (spos[0] + 1, spos[1])
                     ingress = 'l'
-            path.append((ingress, spos))
+            path.append((ingress, tuple(list(spos) + [4])))
         sposfull = self.routes[pkt].chain[0].pos
         dposfull = self.bynid[netsim_node.dst_from_packet(pkt)].pos
         if sposfull != dposfull:
