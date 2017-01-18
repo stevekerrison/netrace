@@ -133,6 +133,7 @@ class netsim_route:
         self.nodes = {src: pkt.PACKET_SIZE[pkt.data.type]}
         self.chain = [src]      # Active part of the route
         self.path = [src]       # Total route plan
+        self.injected = False
 
     def open(self, node):
         """
@@ -174,6 +175,16 @@ class netsim_route:
     def __len__(self):
         """Return the number of bytes still in transit"""
         return sum(self.nodes.values())
+
+    def __str__(self):
+        """Try to depict a route sensibly"""
+        strs = []
+        for n in self.chain:
+            strs.append("""{}: {}""".format(n.pos, self.nodes[n]))
+        return "{}:: ".format(self.pkt.data.id) +  ' -> '.join(strs)
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class netsim_basenet:
@@ -335,6 +346,7 @@ class netsim_zero(netsim_basenet):
                 netsim_node.src_from_packet(pkt)):
             # Invalidation requests appear as self-messages. Avoid cycle.
             self.routes[pkt].open(node)
+            self.routes[pkt].injected = True
             # Move all data to receiver straight away
             self.routes[pkt].propagate()
 
@@ -585,8 +597,13 @@ class netsim_mesh(netsim_basenet):
         if sposfull != dposfull:
             path.append(('recv', dposfull))
         self.routes[pkt].path = path
+        self.routes[pkt].injected = True
         self.route(pkt, path[0])
         node = self.bypos[path[0][1]]
+        print(pkt, sposfull, path)
+        """ print(path)
+        for n in self.routes[pkt].chain:
+            print(pkt.data.id, n.pos, self.routes[pkt].nodes[n]) """
         del path[0]
         if node not in self.active_nodes:
             self.active_nodes.add(node)
@@ -644,6 +661,10 @@ class netsim_mesh(netsim_basenet):
         closures = []
         newactive = set()
         progressable_packets = set()
+        print(self.cycle)
+        for r in self.routes.values():
+            if r.injected:
+                print(r)
         for n in self.active_nodes:
             # First process active queues
             dirs = set(n.q.keys())
