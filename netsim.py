@@ -131,57 +131,95 @@ class netsim_route:
         self.net = net
         self.dst = dst
         self.nodes = {src: pkt.PACKET_SIZE[pkt.data.type]}
+        self.queues = []
         self.chain = [src]      # Active part of the route
-        self.path = [src]       # Total route plan
         self.injected = False
+        self.start = 0
+        self.end = 0
+
+    def head(self):
+        """
+            Determine next node that we will need to open a route to and its
+            target queue
+        """
+        if self.end < len(self.chain) - 1:
+            return (self.queues[self.end], self.chain[self.end + 1])
+        else:
+            return None
 
     def open(self, node):
         """
             Add path along the route
         """
+        """print("Opening from {} to {} for {}".format(self.chain[self.end].pos,
+                                             self.chain[self.end+1].pos,
+                                             self.pkt.data.id))"""
+        self.nodes[node] = 0
+        self.end += 1
+
+    def plan(self, node, queue="recv"):
+        if not isinstance(node, netsim_node):
+            raise ValueError("Node not provided")
         if node in self.nodes:
             raise KeyError("Node already registered for this packet")
-        self.nodes[node] = 0
+        if queue is None:
+            raise ValueError("None type queue provided")
+        self.nodes[node] = None
         self.chain.append(node)
+        self.queues.append(queue)
 
     def propagate(self):
         """
             Move data along route, throttled by nodes. Returns nodes that have
             sent all data so the network simulator can purge queues.
         """
-        if len(self.chain) == 1:
-            if self.chain[0] == self.dst:
-                # Rate limit, or transfer all available data if no rate set
-                rate = min(self.dst.rate, self.nodes[self.dst])
-                self.nodes[self.dst] -= rate
+        if self.start > self.end:
+            raise RuntimeError("Route start is after its end!?")
+        elif self.start == self.end:
+            if len(self.chain) == 1:
+                # Self-reference (probably invalidation req) so clean up now
+                self.nodes[self.chain[-1]] = 0
+                return [(self.chain[-1], self.pkt)]
             else:
-                # Viable route not open yet, no data can move
+                # Nothing can progress right now
                 pass
-        elif len(self.chain) > 1:
+        else:
             for (s, d) in zip(
-                    reversed(self.chain[:-1]), reversed(self.chain[1:])):
+                    reversed(self.chain[self.start:self.end]),
+                    reversed(self.chain[self.start+1:self.end+1])):
                 # Rate limit, or transfer all available data if no rate set
                 rate = min(s.rate, self.nodes[s])
+                if rate == 0:
+                    raise ValueError("Zero rate encountered", self)
                 self.nodes[s] -= rate
                 self.nodes[d] += rate
         closed = []
-        # Close tail as far as the next waiting data
-        while len(self.chain) and not self.nodes[self.chain[0]]:
-            closed.append((self.chain[0], self.pkt))
-            del self.nodes[self.chain[0]]
-            del self.chain[0]
+        for n in self.chain[self.start:self.end]:
+            if self.nodes[n]:
+                # Cannot close tail beyond this point as data still exists
+                break
+            else:
+                # All data shifted, so close the tail a little...
+                self.start += 1
+                closed.append((n, self.pkt))
+        if self.start == self.end and self.end == len(self.chain) - 1:
+            # All data reached receiver
+            closed.append((self.chain[-1], self.pkt))
         return closed
 
     def __len__(self):
         """Return the number of bytes still in transit"""
-        return sum(self.nodes.values())
+        if self.end == len(self.chain) - 1:
+            """All data is at receiver node now"""
+            return 0
+        return sum([self.nodes[n] for n in self.chain[self.start:self.end+1]])
 
     def __str__(self):
         """Try to depict a route sensibly"""
         strs = []
         for n in self.chain:
             strs.append("""{}: {}""".format(n.pos, self.nodes[n]))
-        return "{}:: ".format(self.pkt.data.id) +  ' -> '.join(strs)
+        return "{}:{}s{}e{}::".format(self.pkt.data.id, len(self), self.start, self.end) +  ' -> '.join(strs)
 
     def __repr__(self):
         return self.__str__()
@@ -524,36 +562,29 @@ class netsim_mesh(netsim_basenet):
             raise ValueError(
                 "Cannot have {} dimensions".format(self.dimensions))
 
-    def route(self, pkt, dst):
+    def register(self, pkt):
         """
-            Dimension-order wormhole routing towards destination.
-            A new hop opens only once the inbound step becomes active
-        """
-        q, pos = dst
-        node = self.bypos[pos]
-        node.q[q].appendleft(pkt)
-
-    def inject(self, pkt):
-        """
-            Start routing packet. A route is pre-calculated, following a
-            dimension order routing strategy of:
+            A route is pre-calculated, following a dimension order routing
+            strategy of:
                 L -> NE/SW* -> NW/SE* -> N/S -> W/E -> L
 
             Diagonal dimensions only available if sufficient dimensions
             specified.
         """
-        pkt.cycle_adj = self.cycle - pkt.data.cycle
+        # No normal registration
+        super().register(pkt)
         # Plan the packet's route
-        path = []
-        sposfull = self.routes[pkt].chain[0].pos
+        sposfull = self.bynid[netsim_node.src_from_packet(pkt)].pos
         dposfull = self.bynid[netsim_node.dst_from_packet(pkt)].pos
-        srctype = netsim_node.TNUM_TSTR[sposfull[-1]]
-        dsttype = netsim_node.TNUM_TSTR[dposfull[-1]]
-        spos = self.routes[pkt].chain[0].pos[:2]
-        dpos = self.bynid[netsim_node.dst_from_packet(pkt)].pos[:2]
+        srctype = netsim_node.TNUM_TSTR[sposfull[2]]
+        dsttype = netsim_node.TNUM_TSTR[dposfull[2]]
+        spos = sposfull[:2]
+        dpos = dposfull[:2]
+        route = self.routes[pkt]
         if dposfull != sposfull and sposfull[2] != 4:
             # Get to the switch
-            path.append((srctype, (spos[0], spos[1], 4)))
+            node = self.bypos[(spos[0], spos[1], 4)]
+            route.plan(node, srctype)
         while spos != dpos:
             dimelms = list(zip(spos, dpos))
             if self.dimensions >= 4 and (all(
@@ -591,22 +622,44 @@ class netsim_mesh(netsim_basenet):
                 else:
                     spos = (spos[0] + 1, spos[1])
                     ingress = 'l'
-            path.append((ingress, tuple(list(spos) + [4])))
-        sposfull = self.routes[pkt].chain[0].pos
-        dposfull = self.bynid[netsim_node.dst_from_packet(pkt)].pos
+            route.plan(self.bypos[tuple(list(spos) + [4])], ingress)
         if sposfull != dposfull:
-            path.append(('recv', dposfull))
-        self.routes[pkt].path = path
+            route.plan(self.bypos[dposfull], 'recv')
+
+    def route(self, pkt, dst):
+        """
+            Dimension-order wormhole routing towards destination.
+            A new hop opens only once the inbound step becomes active
+        """
+        q, node = dst
+        node.q[q].appendleft(pkt)
+
+    def inject(self, pkt):
+        """
+            Packet can now proceed if network is available
+        """
+        # print(pkt)
+        pkt.cycle_adj = self.cycle - pkt.data.cycle
         self.routes[pkt].injected = True
-        self.route(pkt, path[0])
-        node = self.bypos[path[0][1]]
-        print(pkt, sposfull, path)
+        node = None
+        if (netsim_node.dst_from_packet(pkt) !=
+                netsim_node.src_from_packet(pkt)):
+            r = self.routes[pkt].head()
+            if r is None:
+                raise ValueError(netsim_node.src_from_packet(pkt),
+                      netsim_node.dst_from_packet(pkt), r, str(pkt))
+            q, node = r
+            self.route(pkt, (q, node))
+        else:
+            # Cheat a bit on self-referencing comms
+            node = self.routes[pkt].chain[0]
+            self.route(pkt, ('recv', node))
+        if node not in self.active_nodes:
+            self.active_nodes.add(node)
+
         """ print(path)
         for n in self.routes[pkt].chain:
             print(pkt.data.id, n.pos, self.routes[pkt].nodes[n]) """
-        del path[0]
-        if node not in self.active_nodes:
-            self.active_nodes.add(node)
 
     def map_nodes(self, mapping):
         tdec = netsim_node.TSTR_TNUM
@@ -659,6 +712,7 @@ class netsim_mesh(netsim_basenet):
             priorities at switches, and injecting new packets.
         """
         closures = []
+        opens = set()
         newactive = set()
         progressable_packets = set()
         print(self.cycle)
@@ -674,31 +728,29 @@ class netsim_mesh(netsim_basenet):
                         n.pos, self.dimensions * 2 + 4))
             for pkt, d in n.active.items():
                 # These have active routes, propagate later
-                """close = self.routes[pkt].propagate()
-                closures += (close, d)"""
                 progressable_packets.add(pkt)
                 dirs.remove(d)
             for d in dirs:
                 if len(n.q[d]):
                     pkt = n.q[d].pop()
-                    # print(self.routes[pkt].path, self.routes[pkt].chain)
-                    # print(n.pos)
                     n.active[pkt] = d
                     self.routes[pkt].open(n)
                     progressable_packets.add(pkt)
-                    # closures += self.routes[pkt].propagate()
-                    if len(self.routes[pkt].path):
-                        hop = self.routes[pkt].path[0]
-                        # print(pkt, hop)
-                        self.route(pkt, hop)
-                        node = self.bypos[hop[1]]
-                        del self.routes[pkt].path[0]
-                        if node not in self.active_nodes:
-                            newactive.add(node)
-        for p in progressable_packets:
+                    opens.add(pkt)
+        for pkt in opens:
+            head = self.routes[pkt].head()
+            if head:
+                self.route(pkt, head)
+                node = head[1]
+                if node not in self.active_nodes:
+                    newactive.add(node)
+        for pkt in progressable_packets:
             closures += self.routes[pkt].propagate()
-        self.active_nodes |= newactive
+        """for r in self.routes.values():
+            if r.injected:
+                print(r)"""
         self.clear(closures)
+        self.active_nodes |= newactive
         if self.cycle in self.dispatchable:
             for pktid in self.dispatchable[self.cycle]:
                 self.inject(self.packets[pktid])
@@ -707,7 +759,9 @@ class netsim_mesh(netsim_basenet):
     def clear(self, closures):
         finpkts = set()
         for node, pkt in closures:
-            if netsim_node.src_from_packet(pkt) == node.nid:
+            # print("Close: {}, {}".format(node.pos, pkt.data.id))
+            if (netsim_node.src_from_packet(pkt) == node.nid and
+                    len(self.routes[pkt]) > 1):
                 # No queue used at the sender
                 continue
             if pkt not in node.active:
@@ -716,42 +770,42 @@ class netsim_mesh(netsim_basenet):
                         pkt.data.id, node.pos))
             del node.active[pkt]
             if not len(node.active) and not (
-                    sum(map(len, [q for q in node.q]))):
+                    sum(map(len, [q for q in node.q.values()]))):
                 self.active_nodes.remove(node)
             if not len(self.routes[pkt]):
                 finpkts.add(pkt)
         for pkt in finpkts:
-           # Check if dependent packets can be dispatched now
-           for dep in pkt.deps:
-               self.update_delaycache(dep, self.cycle - pkt.data.cycle)
-               if (
-                       len(self.dependencies[dep]) == 1 and dep in
-                       self.packets):
-                   # All deps cleared, so the packet is dispatchable, and
-                   # already exists, so must be registered and waiting.
-                   self.mark_dispatch(self.packets[dep].data.cycle +
-                                      self.delaycache[dep], dep)
-               # This dependency reference is no longer needed
-               self.dependencies[dep].remove(pkt)
-               if len(self.dependencies[dep]) == 0:
-                   del self.dependencies[dep]
-           if self.cycle <= pkt.data.cycle:
-               raise RuntimeError((
-                   "Packet {} clearing at {}, which is contradictory " +
-                   "to its original trace cycle of {}").format(
-                       pkt.data.id, self.cycle, pkt.data.cycle))
-           """print(
-               "Retiring {} ORIG:{}, NOW:{}".format(pkt.data.id,
-                                                    pkt.data.cycle,
-                                                    self.cycle))"""
-           # Route is no longer needed
-           del self.routes[pkt]
-           # Packet is no longer needed
-           del self.packets[pkt.data.id]
-           if pkt.data.id in self.dependencies:
-               del self.dependencies[pkt.data.id]
-           if pkt.data.id in self.delaycache:
-               del self.delaycache[pkt.data.id]
+            # Check if dependent packets can be dispatched now
+            for dep in pkt.deps:
+                self.update_delaycache(dep, self.cycle - pkt.data.cycle)
+                if (
+                        len(self.dependencies[dep]) == 1 and dep in
+                        self.packets):
+                    # All deps cleared, so the packet is dispatchable, and
+                    # already exists, so must be registered and waiting.
+                    self.mark_dispatch(self.packets[dep].data.cycle +
+                                       self.delaycache[dep], dep)
+                # This dependency reference is no longer needed
+                self.dependencies[dep].remove(pkt)
+                if len(self.dependencies[dep]) == 0:
+                    del self.dependencies[dep]
+            if self.cycle <= pkt.data.cycle:
+                raise RuntimeError((
+                    "Packet {} clearing at {}, which is contradictory " +
+                    "to its original trace cycle of {}").format(
+                        pkt.data.id, self.cycle, pkt.data.cycle))
+            """print(
+                "Retiring {} ORIG:{}, NOW:{}".format(pkt.data.id,
+                                                     pkt.data.cycle,
+                                                     self.cycle))"""
+            # Route is no longer needed
+            del self.routes[pkt]
+            # Packet is no longer needed
+            del self.packets[pkt.data.id]
+            if pkt.data.id in self.dependencies:
+                del self.dependencies[pkt.data.id]
+            if pkt.data.id in self.delaycache:
+                del self.delaycache[pkt.data.id]
 
 
 class netsim:
