@@ -219,7 +219,8 @@ class netsim_route:
         strs = []
         for n in self.chain:
             strs.append("""{}: {}""".format(n.pos, self.nodes[n]))
-        return "{}:{}s{}e{}::".format(self.pkt.data.id, len(self), self.start, self.end) +  ' -> '.join(strs)
+        return "{}:{}s{}e{}::".format(self.pkt.data.id, len(self), self.start,
+                                      self.end) + ' -> '.join(strs)
 
     def __repr__(self):
         return self.__str__()
@@ -649,7 +650,7 @@ class netsim_mesh(netsim_basenet):
             r = self.routes[pkt].head()
             if r is None:
                 raise ValueError(netsim_node.src_from_packet(pkt),
-                      netsim_node.dst_from_packet(pkt), r, str(pkt))
+                                 netsim_node.dst_from_packet(pkt), r, str(pkt))
             q, node = r
             self.route(pkt, (q, node))
         else:
