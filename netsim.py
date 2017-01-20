@@ -833,11 +833,9 @@ class netsim_mesh(netsim_basenet):
         opens = set()
         newactive = set()
         progressable_packets = set()
-        print(self.cycle)
-        for r in self.routes.values():
-            if r.injected:
-                print(r)
+        # print(self.cycle)
         for n in self.active_nodes:
+            # print(n.pos)
             # First process active queues
             dirs = set(n.q.keys())
             if len(n.active) > self.dimensions * 2 + 4:
