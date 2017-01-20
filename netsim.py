@@ -449,7 +449,7 @@ class netsim_zero(netsim_basenet):
                 raise RuntimeError(
                     "Node {} handling simultaneous receives".format(n))
             elif len(n.active) == 1:
-                pkt = n.active.popitem()
+                pkt, q = n.active.popitem()
                 closures += self.routes[pkt].propagate()
             elif len(n.q['recv']):
                 # We're not active but can be
