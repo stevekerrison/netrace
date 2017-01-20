@@ -534,6 +534,7 @@ class netsim_mesh(netsim_basenet):
                                         [default: 2]
             -b bits --buffering=bits    Amount of buffering per port
                                         [default: 128]
+            -r rate --rate=rate         Link rate (bytes/tfr) [default: 4]
     """
     class switch(netsim_node):
         """
@@ -573,6 +574,7 @@ class netsim_mesh(netsim_basenet):
         """
         # No normal registration
         super().register(pkt)
+        self.routes[pkt].rate = int(self.ARGS['--rate'])
         # Plan the packet's route
         sposfull = self.bynid[netsim_node.src_from_packet(pkt)].pos
         dposfull = self.bynid[netsim_node.dst_from_packet(pkt)].pos
@@ -942,7 +944,8 @@ class netsim:
                     print(file=sys.stderr)
                 self.drain()
                 if self.packets:
-                    print(self.network.cycle-1, last_pkt.data.cycle)
+                    print("End cycle: {}, originally: {}".format(
+                        self.network.cycle-1, last_pkt.data.cycle))
                 break
             self.packets += 1
             # Simulate at least as far as this packet's original inject cycle
