@@ -393,6 +393,9 @@ class netsim_zero(netsim_basenet):
         """Start routing packet"""
         pkt.cycle_adj = self.cycle - pkt.data.cycle
         # Zero network opens route to destination instantly
+        if (netsim_node.dst_from_packet(pkt) !=
+                netsim_node.src_from_packet(pkt)):
+            self.routes[pkt].plan(self.bynid[netsim_node.dst_from_packet(pkt)])
         self.route(pkt, self.bynid[netsim_node.dst_from_packet(pkt)])
 
     def clear(self, closures):
