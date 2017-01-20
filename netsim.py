@@ -905,11 +905,23 @@ class netsim:
                 num_packets, self.network.cycle, len(self.network.packets)),
               file=sys.stderr, end="")
 
+    def subclasses(self, cls):
+        """
+            I started to need recursive subclass discovery, so ack to
+            http://stackoverflow.com/a/17246726/5102124
+        """
+        classes = []
+        for sc in cls.__subclasses__():
+            classes.append(sc)
+            classes.extend(self.subclasses(sc))
+        return classes
+
     def sim(self):
-        classes = {x.__name__[7:]: x for x in netsim_basenet.__subclasses__()}
+        classes = {x.__name__[7:]: x for x in self.subclasses(netsim_basenet)}
         if (self.kwargs['network_type'] == 'help' or
                 self.kwargs['network_type'] not in classes.keys()):
-            print('Available networks: {}'.format(', '.join(classes.keys())))
+            print('Available networks: {}'.format(
+                ', '.join(sorted(classes.keys()))))
             sys.exit(0)
         self.network = classes[self.kwargs['network_type']](
             self.kwargs['network_opts'], self.ntrc.hdr.num_nodes)
