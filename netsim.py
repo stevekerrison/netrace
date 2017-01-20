@@ -463,6 +463,118 @@ class netsim_zero(netsim_basenet):
             del self.dispatchable[self.cycle]
 
 
+class netsim_benes_simple(netsim_zero):
+    """
+        A simplified Benes abstraction based off the zero-network
+        implementation.
+
+        Latency is defined as an option, so the user must determine their
+        switch characteristics themselves.
+
+        We assume that routing was revolved statically. TDM phases are aligned
+        to the maximum transmission time of the largest packet (which is
+        defined as max(netrace_packet.PACKET_SIZE)) with an extra latency
+        period for tear-down synchronisation.
+
+        Usage:
+            NETSIM_ARGS [options]
+
+        Options:
+            -h --help                   This help text
+            -r=rate --rate=rate         Transmission rate (bytes/cyc)
+                                        [default: 8]
+            -l=n --latency=n            Src-to-dst latency of n cycles
+                                        [default: 5]
+    """
+    def __init__(self, argstr, num_nodes):
+        super().__init__(argstr, num_nodes)
+        self.tdm = math.ceil(
+            (int(self.ARGS['--latency']) * 2 +
+             max(filter(None.__ne__, netrace_packet.PACKET_SIZE)) /
+             int(self.ARGS['--rate'])))
+
+    def register(self, pkt):
+        """
+            Register a packet which will be injected now or in the future,
+            enforcing TDM alignment
+        """
+        pkt.cycle_adj = 0
+        self.packets[pkt.data.id] = pkt
+        if (self.cycle in self.dispatchable and pkt.data.id in
+                self.dispatchable[self.cycle]):
+            raise RuntimeError(
+                "Packet {} marked for dispatch before registration".format(
+                    pkt.data.id))
+        # A packet is immediately dispatchable if its dependencies have already
+        # completed, or it has no dependencies.
+        if pkt.data.id not in self.dependencies:
+            # Dependencies may have cleared already, but imposed a delay
+            if pkt.data.id in self.delaycache:
+                cycle = pkt.data.cycle + self.delaycache[pkt.data.id]
+                del self.delaycache[pkt.data.id]
+            else:
+                cycle = pkt.data.cycle
+            cycle += cycle % self.tdm
+            self.mark_dispatch(cycle, pkt.data.id)
+        for dep in pkt.deps:
+            if dep not in self.dependencies:
+                self.dependencies[dep] = set()
+            self.dependencies[dep].add(pkt)
+            self.update_delaycache(dep, 0)
+        # Create route tracking for packet
+        src = netsim_node.src_from_packet(pkt)
+        dst = netsim_node.dst_from_packet(pkt)
+        self.routes[pkt] = netsim_route(
+            pkt, self.bynid[src], self.bynid[dst], self)
+
+    def clear(self, closures):
+        for node, pkt in closures:
+            if pkt not in node.active:
+                raise RuntimeError(
+                    "Packet {} was expected to be active on node {}".format(
+                        pkt.data.id, node))
+            del node.active[pkt]
+            if not len(node.active) and not len(node.q['recv']):
+                self.active_nodes.remove(node)
+            # If packet has sent all data, so clean up
+            if not len(self.routes[pkt]):
+                # Check if dependent packets can be dispatched now
+                for dep in pkt.deps:
+                    cycle = self.cycle - pkt.data.cycle
+                    cycle += cycle % self.tdm
+                    self.update_delaycache(dep, cycle)
+                    if (
+                            len(self.dependencies[dep]) == 1 and dep in
+                            self.packets):
+                        # All deps cleared, so the packet is dispatchable, and
+                        # already exists, so must be registered and waiting.
+                        cycle = (self.packets[dep].data.cycle +
+                                 self.delaycache[dep])
+                        cycle += cycle % self.tdm
+                        self.mark_dispatch(cycle, dep)
+                    # This dependency reference is no longer needed
+                    self.dependencies[dep].remove(pkt)
+                    if len(self.dependencies[dep]) == 0:
+                        del self.dependencies[dep]
+                if self.cycle <= pkt.data.cycle:
+                    raise RuntimeError((
+                        "Packet {} clearing at {}, which is contradictory " +
+                        "to its original trace cycle of {}").format(
+                            pkt.data.id, self.cycle, pkt.data.cycle))
+                """print(
+                    "Retiring {} ORIG:{}, NOW:{}".format(pkt.data.id,
+                                                         pkt.data.cycle,
+                                                         self.cycle))"""
+                # Route is no longer needed
+                del self.routes[pkt]
+                # Packet is no longer needed
+                del self.packets[pkt.data.id]
+                if pkt.data.id in self.dependencies:
+                    del self.dependencies[pkt.data.id]
+                if pkt.data.id in self.delaycache:
+                    del self.delaycache[pkt.data.id]
+
+
 class netsim_benes(netsim_basenet):
     """
         A Benes network based on the MCENoC approach
