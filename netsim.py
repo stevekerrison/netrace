@@ -471,27 +471,36 @@ class netsim_benes_simple(netsim_zero):
         Latency is defined as an option, so the user must determine their
         switch characteristics themselves.
 
-        We assume that routing was revolved statically. TDM phases are aligned
-        to the maximum transmission time of the largest packet (which is
-        defined as max(netrace_packet.PACKET_SIZE)) with an extra latency
-        period for tear-down synchronisation.
+        We assume that routing was revolved statically. TDM phases and their
+        overhead are approximated in relation to the size of packets sent.
 
         Usage:
             NETSIM_ARGS [options]
 
         Options:
-            -h --help                   This help text
-            -r=rate --rate=rate         Transmission rate (bytes/cyc)
-                                        [default: 8]
-            -l=n --latency=n            Src-to-dst latency of n cycles
-                                        [default: 5]
+            -h --help               This help text
+            -r=rate --rate=rate     Transmission rate (bytes/cyc) [default: 8]
+            -l=n --latency=n        Src-to-dst latency of n cycles [default: 5]
+            -t=n --tdm=n            Cycle length of TDM phases. If n is less
+                                    than max(netrace_packet.PACKET_SIZE)/rate,
+                                    then extra overhead is added to transfers
+                                    to account for repeated headers sent for a
+                                    single packet. If n is equal or greater,
+                                    there will be significant slack periods for
+                                    many or all transfers. Default is max
+                                    packet size.
     """
     def __init__(self, argstr, num_nodes):
         super().__init__(argstr, num_nodes)
-        self.tdm = math.ceil(
-            (int(self.ARGS['--latency']) * 2 +
-             max(filter(None.__ne__, netrace_packet.PACKET_SIZE)) /
-             int(self.ARGS['--rate'])))
+        self.latency = int(self.ARGS['--latency'])
+        self.rate = int(self.ARGS['--rate'])
+        if self.ARGS['--tdm']:
+            self.tdm = int(self.ARGS['--tdm'])
+        else:
+            self.tdm = math.ceil((
+                self.latency +
+                max(filter(None.__ne__, netrace_packet.PACKET_SIZE)) /
+                self.rate))
 
     def register(self, pkt):
         """
@@ -526,6 +535,16 @@ class netsim_benes_simple(netsim_zero):
         dst = netsim_node.dst_from_packet(pkt)
         self.routes[pkt] = netsim_route(
             pkt, self.bynid[src], self.bynid[dst], self)
+
+    def inject(self, pkt):
+        super().inject(pkt)
+        r = self.routes[pkt]
+        ncyc = self.latency + math.ceil(len(r) / self.rate)
+        if ncyc > self.tdm:
+            chunk = ((ncyc - self.tdm) - self.latency) * self.rate
+            chunks = len(r) / chunk
+            overhead = (self.latency * self.rate) * (chunks - 1)
+            r.chain[netsim_node.src_from_packet(pkt)] += overhead
 
     def clear(self, closures):
         for node, pkt in closures:
@@ -650,7 +669,7 @@ class netsim_mesh(netsim_basenet):
                                         [default: 2]
             -b bits --buffering=bits    Amount of buffering per port
                                         [default: 128]
-            -r rate --rate=rate         Link rate (bytes/tfr) [default: 4]
+            -r rate --rate=rate         Link rate (bytes/cyc) [default: 4]
     """
     class switch(netsim_node):
         """
