@@ -1071,13 +1071,11 @@ class netsim:
         then = time.time() * 1000
         last_pkt = None
         pkt = self.ntrc.read_packet()
+        ffwd = 0
         if pkt and self.kwargs['region']:
             ffwd = pkt.data.cycle
             print("Fast forward simulation to cycle {}".format(ffwd))
             self.network.cycle = ffwd
-        print("Running test {} on system {} with '{}'".format(
-            self.ntrc.benchmark_name.decode('ascii'),
-            self.kwargs['network_type'], self.kwargs['network_opts']))
         while True:
             if self.kwargs['progress']:
                 now = time.time() * 1000
@@ -1092,8 +1090,13 @@ class netsim:
                     print(file=sys.stderr)
                 self.drain()
                 if self.packets:
-                    print("End cycle: {}, originally: {}".format(
-                        self.network.cycle-1, last_pkt.data.cycle))
+                    print(("Test {} on system {} with '{}'" +
+                          ", start: {}, end: {}, originally: {}").format(
+                            self.ntrc.benchmark_name.decode('ascii'),
+                            self.kwargs['network_type'],
+                            self.kwargs['network_opts'],
+                            ffwd,
+                            self.network.cycle-1, last_pkt.data.cycle))
                 break
             self.packets += 1
             # Simulate at least as far as this packet's original inject cycle
