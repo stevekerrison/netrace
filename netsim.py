@@ -1075,6 +1075,9 @@ class netsim:
             ffwd = pkt.data.cycle
             print("Fast forward simulation to cycle {}".format(ffwd))
             self.network.cycle = ffwd
+        print("Running test {} on system {} with '{}'".format(
+            self.ntrc.benchmark_name.decode('ascii'),
+            self.kwargs['network_type'], self.kwargs['network_opts']))
         while True:
             if self.kwargs['progress']:
                 now = time.time() * 1000
