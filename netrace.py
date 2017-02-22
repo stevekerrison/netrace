@@ -20,7 +20,7 @@
                                     in bz2, gzip or uncompressed format.
 
     Copyright (c) 2010-2011 The University of Texas at Austin
-    Copyright (c) 2016 Steve Kerrison, University of Bristol, UK
+    Copyright (c) 2016-2017 Steve Kerrison, University of Bristol, UK
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
