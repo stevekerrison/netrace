@@ -19,6 +19,6 @@ To run it, use `./netrace.py <tracefile>`. Uncompressed, gzip and bz2
 files are all supported and should be autodetected provided python's
 magic library is able to determine the right MIME type.
 
-The API is a WIP and this README will be updated in due course (assuming
-the author manages to make use of this Python port).
+See `netsim.py` for an implementation of simulation using netrace data.
+Currently three network types are supported.
 
