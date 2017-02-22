@@ -1085,12 +1085,12 @@ class netsim:
             pkt = self.ntrc.read_packet()
         if self.kwargs['debug']:
             print(("Deps: {}, pkts: {}, dispatch: {}, routes: {}, dc: {}, " +
-               "act: {}").format(len(self.network.dependencies),
-                                 len(self.network.packets),
-                                 len(self.network.dispatchable),
-                                 len(self.network.routes),
-                                 len(self.network.delaycache),
-                                 len(self.network.active_nodes)))
+                   "act: {}").format(len(self.network.dependencies),
+                                     len(self.network.packets),
+                                     len(self.network.dispatchable),
+                                     len(self.network.routes),
+                                     len(self.network.delaycache),
+                                     len(self.network.active_nodes)))
 
     def __init__(self, nt, **kwargs):
         self.ntrc = nt
