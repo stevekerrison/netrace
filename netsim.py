@@ -27,6 +27,7 @@
         -p --progress                   Print progress to stderr
         -l n --packet-limit=n           Process no more than n packets.
         -r reg --region=reg             Region to simulate [default: all]
+        --debug                         Print some debug information.
 
     Arguments:
         <trace>                     A netrace compatible trace file from (Ge)M5
@@ -151,9 +152,6 @@ class netsim_route:
         """
             Add path along the route
         """
-        """print("Opening from {} to {} for {}".format(self.chain[self.end].pos,
-                                             self.chain[self.end+1].pos,
-                                             self.pkt.data.id))"""
         self.nodes[node] = 0
         self.end += 1
 
@@ -580,10 +578,6 @@ class netsim_benes_simple(netsim_zero):
                         "Packet {} clearing at {}, which is contradictory " +
                         "to its original trace cycle of {}").format(
                             pkt.data.id, self.cycle, pkt.data.cycle))
-                """print(
-                    "Retiring {} ORIG:{}, NOW:{}".format(pkt.data.id,
-                                                         pkt.data.cycle,
-                                                         self.cycle))"""
                 # Route is no longer needed
                 del self.routes[pkt]
                 # Packet is no longer needed
@@ -775,7 +769,6 @@ class netsim_mesh(netsim_basenet):
         """
             Packet can now proceed if network is available
         """
-        # print(pkt)
         pkt.cycle_adj = self.cycle - pkt.data.cycle
         self.routes[pkt].injected = True
         node = None
@@ -793,10 +786,6 @@ class netsim_mesh(netsim_basenet):
             self.route(pkt, ('recv', node))
         if node not in self.active_nodes:
             self.active_nodes.add(node)
-
-        """ print(path)
-        for n in self.routes[pkt].chain:
-            print(pkt.data.id, n.pos, self.routes[pkt].nodes[n]) """
 
     def map_nodes(self, mapping):
         tdec = netsim_node.TSTR_TNUM
@@ -852,9 +841,7 @@ class netsim_mesh(netsim_basenet):
         opens = set()
         newactive = set()
         progressable_packets = set()
-        # print(self.cycle)
         for n in self.active_nodes:
-            # print(n.pos)
             # First process active queues
             dirs = set(n.q.keys())
             if len(n.active) > self.dimensions * 2 + 4:
@@ -881,9 +868,6 @@ class netsim_mesh(netsim_basenet):
                     newactive.add(node)
         for pkt in progressable_packets:
             closures += self.routes[pkt].propagate()
-        """for r in self.routes.values():
-            if r.injected:
-                print(r)"""
         self.clear(closures)
         self.active_nodes |= newactive
         if self.cycle in self.dispatchable:
@@ -894,7 +878,6 @@ class netsim_mesh(netsim_basenet):
     def clear(self, closures):
         finpkts = set()
         for node, pkt in closures:
-            # print("Close: {}, {}".format(node.pos, pkt.data.id))
             if (netsim_node.src_from_packet(pkt) == node.nid and
                     len(self.routes[pkt]) > 1):
                 # No queue used at the sender
@@ -929,10 +912,6 @@ class netsim_mesh(netsim_basenet):
                     "Packet {} clearing at {}, which is contradictory " +
                     "to its original trace cycle of {}").format(
                         pkt.data.id, self.cycle, pkt.data.cycle))
-            """print(
-                "Retiring {} ORIG:{}, NOW:{}".format(pkt.data.id,
-                                                     pkt.data.cycle,
-                                                     self.cycle))"""
             # Route is no longer needed
             del self.routes[pkt]
             # Packet is no longer needed
@@ -1104,6 +1083,14 @@ class netsim:
             self.network.register(pkt)
             last_pkt = pkt
             pkt = self.ntrc.read_packet()
+        if self.kwargs['debug']:
+            print(("Deps: {}, pkts: {}, dispatch: {}, routes: {}, dc: {}, " +
+               "act: {}").format(len(self.network.dependencies),
+                                 len(self.network.packets),
+                                 len(self.network.dispatchable),
+                                 len(self.network.routes),
+                                 len(self.network.delaycache),
+                                 len(self.network.active_nodes)))
 
     def __init__(self, nt, **kwargs):
         self.ntrc = nt
